@@ -30,7 +30,9 @@ A full-stack real-time voting application with FastAPI backend and React fronten
 
 ## 🚀 Quick Start
 
-### Using Docker (Recommended)
+### Development (Local)
+
+#### Using Docker (Recommended)
 
 1. Clone the repository:
 ```bash
@@ -38,9 +40,10 @@ git clone <your-repo>
 cd vote_app
 ```
 
-2. Create `.env` file (copy from `.env.example` and update):
+2. Create `.env` files:
 ```bash
-cp .env.example .env
+cp api/.env.example api/.env
+cp web/.env.example web/.env
 ```
 
 3. Build and run with Docker Compose:
@@ -52,6 +55,77 @@ docker-compose up --build
 - Frontend: http://localhost:5173
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
+
+### Production Deployment
+
+#### Quick Production Setup (Serverga deploy qilish)
+
+1. Server'ga SSH orqali kirish:
+```bash
+ssh user@your-server-ip
+```
+
+2. Loyihani ko'chirish:
+```bash
+# Git orqali
+git clone <your-repo> ~/vote_app
+cd ~/vote_app
+
+# YOKI scp orqali local kompyuterdan
+scp -r vote_app/ user@your-server-ip:~/vote_app/
+```
+
+3. Quick start script'ni ishga tushirish:
+```bash
+cd ~/vote_app
+chmod +x quick-start.sh
+./quick-start.sh
+```
+
+Script avtomatik ravishda:
+- ✅ Docker va Docker Compose o'rnatadi
+- ✅ Environment fayllarini yaratadi
+- ✅ Firewall sozlaydi (portlar: 80, 8000)
+- ✅ Container'larni build qiladi va ishga tushiradi
+- ✅ Database'ni initsializatsiya qiladi
+
+4. Browser'da oching:
+- Frontend: `http://your-server-ip`
+- API: `http://your-server-ip:8000/docs`
+- Admin: `http://your-server-ip/admin/login`
+
+5. **MUHIM**: `api/.env` faylida parolni o'zgartiring:
+```bash
+nano api/.env
+# ADMIN_PASSWORD va EXTERNAL_API_TOKEN ni o'zgartiring
+docker-compose restart
+```
+
+#### Batafsil Ko'rsatma
+
+Production deployment haqida to'liq ma'lumot uchun [DEPLOY.md](DEPLOY.md) faylini o'qing.
+
+#### Deployment Commandlar
+
+```bash
+# Loyihani ishga tushirish
+./deploy.sh start
+
+# Loglarni ko'rish
+./deploy.sh logs
+
+# Backup yaratish
+./deploy.sh backup
+
+# Yangilash
+./deploy.sh update
+
+# To'xtatish
+./deploy.sh stop
+
+# Status ko'rish
+./deploy.sh status
+```
 
 ### Manual Setup
 

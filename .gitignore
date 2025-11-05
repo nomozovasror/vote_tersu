@@ -59,3 +59,10 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Backups
+backups/
+*.backup
+
+# Uploads
+uploads/

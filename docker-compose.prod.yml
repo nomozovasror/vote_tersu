@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: voting_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./api/.env:/app/.env:ro
+    environment:
+      - DATABASE_URL=sqlite:///./data/voting.db
+    env_file:
+      - ./api/.env
+    restart: unless-stopped
+    networks:
+      - voting-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: voting_web
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - voting-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  voting-network:
+    driver: bridge
+
+volumes:
+  data:
+    driver: local

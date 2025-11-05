@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   api:
     build:
@@ -7,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: voting_api
     ports:
-      - "2013:8000"
+      - "2014:8000"
     volumes:
       - ./data:/app/data
       - ./api/.env:/app/.env:ro
@@ -19,7 +17,7 @@ services:
     networks:
       - voting-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -36,7 +34,7 @@ services:
       dockerfile: Dockerfile
     container_name: voting_web
     ports:
-      - "2015:80"
+      - "2013:80"
     depends_on:
       api:
         condition: service_healthy

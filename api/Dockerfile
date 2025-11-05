@@ -16,4 +16,5 @@ RUN mkdir -p /app/data
 EXPOSE 8000
 
 # Run database initialization and start server
-CMD python -m app.init_db && uvicorn app.main:app --host 0.0.0.0 --port 8000
+# Set timeout to 300 seconds for long-running operations
+CMD python -m app.init_db && uvicorn app.main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 300

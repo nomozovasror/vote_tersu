@@ -24,7 +24,7 @@ async def sync_candidates_from_api(
     try:
         all_items = []
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=300.0) as client:
             headers = {}
             if settings.EXTERNAL_API_TOKEN:
                 headers["Authorization"] = f"Bearer {settings.EXTERNAL_API_TOKEN}"
@@ -32,8 +32,9 @@ async def sync_candidates_from_api(
             # Fetch all pages with pagination
             page = 1
             limit = 100  # Increase limit to reduce API calls
+            max_pages = 100  # Safety limit to prevent infinite loops
 
-            while True:
+            while page <= max_pages:
                 # Add required 'type' parameter and pagination params
                 params = {
                     "type": "teacher",
@@ -41,11 +42,12 @@ async def sync_candidates_from_api(
                     "limit": limit
                 }
 
+                print(f"Fetching page {page} with limit {limit}...")
+
                 response = await client.get(
                     settings.EXTERNAL_API_URL,
                     headers=headers,
-                    params=params,
-                    timeout=30.0
+                    params=params
                 )
                 response.raise_for_status()
                 result = response.json()
@@ -60,20 +62,31 @@ async def sync_candidates_from_api(
                 # Data is nested in result['data']['items']
                 api_data = result.get("data", {})
                 items = api_data.get("items", [])
+                total = api_data.get("total", 0)
+
+                print(f"Page {page}: Got {len(items)} items. Total in DB: {len(all_items)}. API total: {total}")
 
                 if not items:
                     # No more items, break the loop
+                    print("No items in response, stopping pagination")
                     break
 
                 all_items.extend(items)
 
                 # Check if we've fetched all items
-                total = api_data.get("total", 0)
-                if len(all_items) >= total:
+                if total > 0 and len(all_items) >= total:
+                    print(f"Fetched all {len(all_items)} items (total: {total})")
+                    break
+
+                # If we got less than limit, we're on the last page
+                if len(items) < limit:
+                    print(f"Got less than {limit} items, assuming last page")
                     break
 
                 # Move to next page
                 page += 1
+
+            print(f"Pagination complete. Total items fetched: {len(all_items)}")
 
         if not all_items:
             return {"message": "No candidates found in API", "count": 0}

@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: voting_api
     ports:
-      - "8000:8000"
+      - "2013:8000"
     volumes:
       - ./data:/app/data
       - ./api/.env:/app/.env:ro

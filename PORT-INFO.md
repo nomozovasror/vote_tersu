@@ -21,21 +21,28 @@ VITE_API_URL=http://localhost:8000
 - Bu fayl faqat **API URL**ni saqlaydi
 - Frontend'ning o'zi qaysi portda ochilishi Docker Compose'da belgilanadi
 
-## API Port: 8000
+## API Port: 2013
 
-Backend 8000 portda ochiladi:
+Backend 2013 portda ochiladi:
 
 ### Docker Compose
 ```yaml
 api:
   ports:
-    - "8000:8000"
+    - "2013:8000"  # Host:Container
 ```
+- **2013**: Server/kompyuterda ochiq port (global)
+- **8000**: Container ichidagi FastAPI port (internal)
 
 ### API/.env Fayli
 ```env
-BACKEND_URL=http://localhost:8000
+BACKEND_URL=http://localhost:2013
 FRONTEND_URL=http://localhost:2015
+```
+
+### Web/.env Fayli
+```env
+VITE_API_URL=http://localhost:2013
 ```
 
 ## Port Mapping Tushuntirilishi
@@ -43,25 +50,27 @@ FRONTEND_URL=http://localhost:2015
 ### Development (Local)
 ```
 Browser → http://localhost:2015 → Docker Container (Nginx:80) → React App
-Browser → http://localhost:8000 → Docker Container (FastAPI:8000) → Backend
+Browser → http://localhost:2013 → Docker Container (FastAPI:8000) → Backend
 ```
 
 ### Production (Server)
 ```
 Browser → http://server-ip:2015 → Docker Container (Nginx:80) → React App
-Browser → http://server-ip:8000 → Docker Container (FastAPI:8000) → Backend
+Browser → http://server-ip:2013 → Docker Container (FastAPI:8000) → Backend
 ```
 
 ## URL'lar
 
 ### Local Development
 - Frontend: `http://localhost:2015`
-- API: `http://localhost:8000`
+- API: `http://localhost:2013`
+- API Docs: `http://localhost:2013/docs`
 - Admin Panel: `http://localhost:2015/admin/login`
 
 ### Production
 - Frontend: `http://your-server-ip:2015`
-- API: `http://your-server-ip:8000`
+- API: `http://your-server-ip:2013`
+- API Docs: `http://your-server-ip:2013/docs`
 - Admin Panel: `http://your-server-ip:2015/admin/login`
 
 ## Firewall (Production)
@@ -69,7 +78,7 @@ Browser → http://server-ip:8000 → Docker Container (FastAPI:8000) → Backen
 ```bash
 sudo ufw allow 22/tcp      # SSH
 sudo ufw allow 2015/tcp    # Frontend (global port)
-sudo ufw allow 8000/tcp    # API (global port)
+sudo ufw allow 2013/tcp    # API (global port)
 ```
 
 ## Tez-tez so'raladigan savollar

@@ -3,7 +3,7 @@ services:
     build: ./api
     container_name: voting_api
     ports:
-      - "8000:8000"
+      - "2013:8000"
     environment:
       - DATABASE_URL=sqlite:///./data/voting.db
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}

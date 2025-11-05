@@ -92,9 +92,9 @@ start_app() {
     fi
 
     log_info "Voting App started successfully!"
-    log_info "Frontend: http://localhost"
-    log_info "API: http://localhost:8000"
-    log_info "API Docs: http://localhost:8000/docs"
+    log_info "Frontend: http://localhost:2013"
+    log_info "API: http://localhost:2014"
+    log_info "API Docs: http://localhost:2014/docs"
 }
 
 stop_app() {

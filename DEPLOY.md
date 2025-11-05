@@ -8,7 +8,7 @@ Bu loyihani serverga deploy qilish uchun qadamma-qadam ko'rsatma.
 - **RAM**: Minimum 2GB (tavsiya: 4GB)
 - **CPU**: 2 core
 - **Disk**: 10GB
-- **Portlar**: 2015 (Frontend), 8000 (API), 443 (HTTPS - optional)
+- **Portlar**: 2013 (Frontend), 2014 (API), 443 (HTTPS - optional)
 
 ## 2. Docker va Docker Compose O'rnatish
 
@@ -74,10 +74,10 @@ EXTERNAL_API_URL=https://student.tersu.uz/rest/v1/data/employee-list
 EXTERNAL_API_TOKEN=your-api-token
 
 # Backend URL - Server IP yoki domain
-BACKEND_URL=http://your-server-ip:8000
+BACKEND_URL=http://your-server-ip:2014
 
 # Frontend URL
-FRONTEND_URL=http://your-server-ip:2015
+FRONTEND_URL=http://your-server-ip:2013
 ```
 
 Frontend uchun environment:
@@ -89,7 +89,7 @@ nano .env
 
 ```env
 # API URL - Server IP yoki domain
-VITE_API_URL=http://your-server-ip:8000
+VITE_API_URL=http://your-server-ip:2014
 ```
 
 ## 5. Production Docker Compose
@@ -113,7 +113,7 @@ services:
       dockerfile: Dockerfile
     container_name: voting_api
     ports:
-      - "8000:8000"
+      - "2014:8000"
     volumes:
       - ./data:/app/data
     environment:
@@ -130,7 +130,7 @@ services:
       dockerfile: Dockerfile
     container_name: voting_web
     ports:
-      - "2015:80"
+      - "2013:80"
     depends_on:
       - api
     restart: unless-stopped
@@ -156,8 +156,8 @@ sudo apt install ufw
 sudo ufw allow 22/tcp
 
 # Frontend va API portlarini ochish
-sudo ufw allow 2015/tcp
-sudo ufw allow 8000/tcp
+sudo ufw allow 2013/tcp
+sudo ufw allow 2014/tcp
 
 # Agar HTTPS kerak bo'lsa
 sudo ufw allow 443/tcp
@@ -201,9 +201,9 @@ exit
 
 Browser'da quyidagi URLlarni oching:
 
-- **Frontend**: `http://your-server-ip:2015`
-- **API**: `http://your-server-ip:8000/docs`
-- **Admin Panel**: `http://your-server-ip:2015/admin/login`
+- **Frontend**: `http://your-server-ip:2013`
+- **API**: `http://your-server-ip:2014/docs`
+- **Admin Panel**: `http://your-server-ip:2013/admin/login`
 
 ## 10. Container Management
 
@@ -351,8 +351,8 @@ docker-compose up -d --build --force-recreate
 ### Port band
 ```bash
 # Qaysi process portni ishlatayotganini ko'rish
-sudo netstat -tulpn | grep :8000
-sudo netstat -tulpn | grep :80
+sudo netstat -tulpn | grep :2014
+sudo netstat -tulpn | grep :2013
 
 # Process'ni to'xtatish
 sudo kill -9 <PID>
@@ -392,7 +392,7 @@ server {
 
     # Frontend
     location / {
-        proxy_pass http://localhost:80;
+        proxy_pass http://localhost:2013;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -401,7 +401,7 @@ server {
 
     # API
     location /api {
-        proxy_pass http://localhost:8000;
+        proxy_pass http://localhost:2014;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -410,7 +410,7 @@ server {
 
     # WebSocket
     location /ws {
-        proxy_pass http://localhost:8000;
+        proxy_pass http://localhost:2014;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -453,7 +453,7 @@ nano api/.env  # yuqoridagi konfiguratsiyani kiriting
 nano web/.env  # yuqoridagi konfiguratsiyani kiriting
 
 # 4. Firewall sozlash
-sudo ufw allow 22 && sudo ufw allow 2015 && sudo ufw allow 8000
+sudo ufw allow 22 && sudo ufw allow 2013 && sudo ufw allow 2014
 sudo ufw enable
 
 # 5. Ishga tushirish
@@ -463,8 +463,8 @@ docker-compose up -d --build
 docker exec -it voting_api python -m app.init_db
 
 # 7. Tekshirish
-curl http://localhost:8000/docs
-curl http://localhost:2015
+curl http://localhost:2014/docs
+curl http://localhost:2013
 ```
 
 ---

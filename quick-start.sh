@@ -75,7 +75,7 @@ if [ ! -f "api/.env" ]; then
         # Replace placeholders
         sed -i.bak "s|your-very-long-random-secret-key-minimum-32-characters-here|$SECRET_KEY|g" api/.env
         sed -i.bak "s|http://localhost:8000|http://$SERVER_IP:8000|g" api/.env
-        sed -i.bak "s|http://localhost:5173|http://$SERVER_IP|g" api/.env
+        sed -i.bak "s|http://localhost:2015|http://$SERVER_IP:2015|g" api/.env
 
         rm api/.env.bak
 
@@ -121,7 +121,7 @@ if command -v ufw &> /dev/null; then
 
     # Allow ports
     sudo ufw allow 22/tcp comment "SSH"
-    sudo ufw allow 80/tcp comment "HTTP"
+    sudo ufw allow 2015/tcp comment "Frontend"
     sudo ufw allow 8000/tcp comment "API"
 
     echo -e "${GREEN}Firewall configured${NC}"
@@ -164,9 +164,9 @@ echo -e "${GREEN}Installation Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${YELLOW}Access URLs:${NC}"
-echo "  Frontend: http://$SERVER_IP"
+echo "  Frontend: http://$SERVER_IP:2015"
 echo "  API Docs: http://$SERVER_IP:8000/docs"
-echo "  Admin Panel: http://$SERVER_IP/admin/login"
+echo "  Admin Panel: http://$SERVER_IP:2015/admin/login"
 echo ""
 echo -e "${YELLOW}Default Credentials:${NC}"
 echo "  Username: admin"

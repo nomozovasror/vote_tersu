@@ -36,7 +36,7 @@ services:
       dockerfile: Dockerfile
     container_name: voting_web
     ports:
-      - "80:80"
+      - "2015:80"
     depends_on:
       api:
         condition: service_healthy

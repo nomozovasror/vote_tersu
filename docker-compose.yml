@@ -13,7 +13,7 @@ services:
       - EXTERNAL_API_TOKEN=${EXTERNAL_API_TOKEN:-}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
-      - FRONTEND_URL=http://localhost:5173
+      - FRONTEND_URL=http://localhost:2015
     volumes:
       - ./data:/app/data
     networks:
@@ -23,7 +23,7 @@ services:
     build: ./web
     container_name: voting_web
     ports:
-      - "5173:80"
+      - "2015:80"
     depends_on:
       - api
     networks:

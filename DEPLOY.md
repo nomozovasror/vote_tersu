@@ -8,7 +8,7 @@ Bu loyihani serverga deploy qilish uchun qadamma-qadam ko'rsatma.
 - **RAM**: Minimum 2GB (tavsiya: 4GB)
 - **CPU**: 2 core
 - **Disk**: 10GB
-- **Portlar**: 80 (HTTP), 443 (HTTPS), 8000 (API)
+- **Portlar**: 2015 (Frontend), 8000 (API), 443 (HTTPS - optional)
 
 ## 2. Docker va Docker Compose O'rnatish
 
@@ -77,7 +77,7 @@ EXTERNAL_API_TOKEN=your-api-token
 BACKEND_URL=http://your-server-ip:8000
 
 # Frontend URL
-FRONTEND_URL=http://your-server-ip
+FRONTEND_URL=http://your-server-ip:2015
 ```
 
 Frontend uchun environment:
@@ -130,7 +130,7 @@ services:
       dockerfile: Dockerfile
     container_name: voting_web
     ports:
-      - "80:80"
+      - "2015:80"
     depends_on:
       - api
     restart: unless-stopped
@@ -155,8 +155,8 @@ sudo apt install ufw
 # SSH portini ochish (disconnect bo'lmaslik uchun!)
 sudo ufw allow 22/tcp
 
-# HTTP va API portlarini ochish
-sudo ufw allow 80/tcp
+# Frontend va API portlarini ochish
+sudo ufw allow 2015/tcp
 sudo ufw allow 8000/tcp
 
 # Agar HTTPS kerak bo'lsa
@@ -201,9 +201,9 @@ exit
 
 Browser'da quyidagi URLlarni oching:
 
-- **Frontend**: `http://your-server-ip`
+- **Frontend**: `http://your-server-ip:2015`
 - **API**: `http://your-server-ip:8000/docs`
-- **Admin Panel**: `http://your-server-ip/admin/login`
+- **Admin Panel**: `http://your-server-ip:2015/admin/login`
 
 ## 10. Container Management
 
@@ -453,7 +453,7 @@ nano api/.env  # yuqoridagi konfiguratsiyani kiriting
 nano web/.env  # yuqoridagi konfiguratsiyani kiriting
 
 # 4. Firewall sozlash
-sudo ufw allow 22 && sudo ufw allow 80 && sudo ufw allow 8000
+sudo ufw allow 22 && sudo ufw allow 2015 && sudo ufw allow 8000
 sudo ufw enable
 
 # 5. Ishga tushirish
@@ -464,6 +464,7 @@ docker exec -it voting_api python -m app.init_db
 
 # 7. Tekshirish
 curl http://localhost:8000/docs
+curl http://localhost:2015
 ```
 
 ---

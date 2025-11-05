@@ -52,7 +52,7 @@ docker-compose up --build
 ```
 
 4. Access the application:
-- Frontend: http://localhost:5173
+- Frontend: http://localhost:2015
 - Backend API: http://localhost:8000
 - API Docs: http://localhost:8000/docs
 
@@ -85,14 +85,14 @@ chmod +x quick-start.sh
 Script avtomatik ravishda:
 - ✅ Docker va Docker Compose o'rnatadi
 - ✅ Environment fayllarini yaratadi
-- ✅ Firewall sozlaydi (portlar: 80, 8000)
+- ✅ Firewall sozlaydi (portlar: 2015, 8000)
 - ✅ Container'larni build qiladi va ishga tushiradi
 - ✅ Database'ni initsializatsiya qiladi
 
 4. Browser'da oching:
-- Frontend: `http://your-server-ip`
+- Frontend: `http://your-server-ip:2015`
 - API: `http://your-server-ip:8000/docs`
-- Admin: `http://your-server-ip/admin/login`
+- Admin: `http://your-server-ip:2015/admin/login`
 
 5. **MUHIM**: `api/.env` faylida parolni o'zgartiring:
 ```bash

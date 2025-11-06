@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import api, { WS_BASE_URL } from '../utils/api';
 import { Event, CurrentCandidate, EventStatus, VoteTally } from '../types';
+import { generateUUID } from '../utils/uuid';
 
 export default function VotePage() {
   const { link } = useParams<{ link: string }>();
@@ -12,7 +13,7 @@ export default function VotePage() {
   const [error, setError] = useState('');
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const nonce = useRef(crypto.randomUUID());
+  const nonce = useRef(generateUUID());
   const previousCandidateId = useRef<number | null>(null);
   const countdownTarget = useRef<number | null>(null);
   const [countdownMs, setCountdownMs] = useState(0);

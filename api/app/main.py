@@ -1,6 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pathlib import Path
 from .core.config import settings
 from .core.database import engine, Base, ensure_schema
@@ -51,3 +52,26 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+
+# Serve frontend static files (for production)
+frontend_dist = Path(__file__).parent.parent.parent / "web" / "dist"
+if frontend_dist.exists():
+    # Mount static assets (JS, CSS, etc.)
+    app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
+
+    # Catch-all route to serve index.html for client-side routing
+    @app.get("/{full_path:path}")
+    async def serve_frontend(request: Request, full_path: str):
+        """Serve frontend for all non-API routes (enables client-side routing)"""
+        # Skip API routes
+        if full_path.startswith(("api/", "auth/", "events/", "candidates/", "display/", "event-management/", "ws/", "docs", "openapi.json", "health", "uploads/")):
+            # Let FastAPI handle API routes normally (will return 404 if not found)
+            return None
+
+        # Serve index.html for frontend routes
+        index_file = frontend_dist / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file))
+
+        return {"error": "Frontend not built. Run 'npm run build' in web directory."}

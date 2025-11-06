@@ -30,6 +30,8 @@ app.add_middleware(
         "http://localhost:3000",
         "http://213.230.97.43:2013",
         "http://213.230.97.43:2014",
+        "https://213.230.97.43:2013",
+        "https://213.230.97.43:2014",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -74,12 +76,41 @@ if frontend_dist.exists():
     @app.get("/{full_path:path}")
     async def serve_frontend(request: Request, full_path: str):
         """Serve frontend for all non-API routes (enables client-side routing)"""
-        # Skip API routes
-        if full_path.startswith(("api/", "auth/", "events/", "candidates/", "display/", "event-management/", "ws/", "docs", "openapi.json", "health", "uploads/")):
+        # List of backend API route prefixes (NOT frontend routes)
+        api_prefixes = (
+            "api/",
+            "auth/",
+            "events/",
+            "candidates/",
+            "event-management/",
+            "ws/",
+            "docs",
+            "openapi.json",
+            "health",
+            "uploads/",
+            "redoc"
+        )
+
+        # Skip only backend API routes, NOT frontend routes
+        # display/ prefix is used by BOTH backend API (/display/{event_id}/current)
+        # and frontend routes (/display/{link})
+        # We need to distinguish: API uses /display/{number} while frontend uses /display/{uuid}
+
+        if full_path.startswith(api_prefixes):
             # Let FastAPI handle API routes normally (will return 404 if not found)
             return None
 
-        # Serve index.html for frontend routes
+        # Special handling for /display/ routes
+        if full_path.startswith("display/"):
+            # Check if it's an API route (format: display/{number}/...)
+            parts = full_path.split("/")
+            if len(parts) >= 3 and parts[1].isdigit():
+                # This is backend API: /display/123/current or /display/123/set-current
+                return None
+            # Otherwise it's frontend route: /display/{uuid}
+            # Fall through to serve index.html
+
+        # Serve index.html for frontend routes (vote, display, admin, etc.)
         index_file = frontend_dist / "index.html"
         if index_file.exists():
             return FileResponse(str(index_file))

@@ -11,6 +11,8 @@ export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [eventName, setEventName] = useState('');
   const [durationSec, setDurationSec] = useState(15);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [modalLink, setModalLink] = useState({ type: '', url: '' });
   const navigate = useNavigate();
   const { success, error, warning, ToastContainer } = useToast();
 
@@ -65,7 +67,9 @@ export default function Dashboard() {
     if (copied) {
       success('Vote link nusxalandi!');
     } else {
-      error('Link nusxalashda xatolik yuz berdi');
+      // Fallback: Show modal with link
+      setModalLink({ type: 'Vote', url });
+      setShowLinkModal(true);
     }
   };
 
@@ -75,7 +79,9 @@ export default function Dashboard() {
     if (copied) {
       success('Display link nusxalandi!');
     } else {
-      error('Link nusxalashda xatolik yuz berdi');
+      // Fallback: Show modal with link
+      setModalLink({ type: 'Display', url });
+      setShowLinkModal(true);
     }
   };
 
@@ -398,6 +404,75 @@ export default function Dashboard() {
                   Bekor qilish
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Link Modal - Fallback agar clipboard ishlamasa */}
+      {showLinkModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-slideDown">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-6">
+              <h2 className="text-2xl font-bold text-white flex items-center">
+                <svg className="w-7 h-7 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+                {modalLink.type} Link
+              </h2>
+              <p className="text-blue-100 text-sm mt-1">Link'ni qo'lda nusxalang</p>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-8">
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Link:
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={modalLink.url}
+                    readOnly
+                    className="w-full px-4 py-3 pr-24 border-2 border-blue-300 rounded-lg bg-blue-50 text-gray-800 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 select-all"
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                  />
+                  <button
+                    onClick={async () => {
+                      const copied = await copyToClipboard(modalLink.url);
+                      if (copied) {
+                        success('Link nusxalandi!');
+                        setShowLinkModal(false);
+                      }
+                    }}
+                    className="absolute right-2 top-2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-all"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                <div className="flex items-start space-x-3">
+                  <svg className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div className="flex-1">
+                    <p className="text-sm text-yellow-800 font-medium">Qo'lda nusxalash</p>
+                    <p className="text-xs text-yellow-700 mt-1">
+                      Link'ni belgilang (ustiga bosing) va Ctrl+C (yoki Cmd+C Mac'da) tugmalarini bosing
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowLinkModal(false)}
+                className="w-full inline-flex items-center justify-center px-6 py-3 border border-gray-300 text-base font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all"
+              >
+                Yopish
+              </button>
             </div>
           </div>
         </div>

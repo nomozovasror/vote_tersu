@@ -66,3 +66,11 @@ def ensure_schema():
                 "UPDATE candidates SET which_position = position WHERE which_position IS NULL OR which_position = ''"
             ))
             connection.commit()
+
+        # Ensure device_id exists on votes (for multi-device voting on same WiFi)
+        vote_columns = table_columns("votes")
+        if vote_columns and "device_id" not in vote_columns:
+            connection.execute(text(
+                "ALTER TABLE votes ADD COLUMN device_id VARCHAR"
+            ))
+            connection.commit()

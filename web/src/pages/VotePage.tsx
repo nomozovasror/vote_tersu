@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import api, { WS_BASE_URL } from '../utils/api';
 import { Event, CurrentCandidate, EventStatus, VoteTally } from '../types';
 import { generateUUID } from '../utils/uuid';
+import { getDeviceId } from '../utils/deviceId';
 
 export default function VotePage() {
   const { link } = useParams<{ link: string }>();
@@ -14,6 +15,7 @@ export default function VotePage() {
   const [selectedCandidateId, setSelectedCandidateId] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const nonce = useRef(generateUUID());
+  const deviceId = useRef(getDeviceId());
   const previousCandidateId = useRef<number | null>(null);
   const countdownTarget = useRef<number | null>(null);
   const [countdownMs, setCountdownMs] = useState(0);
@@ -241,7 +243,8 @@ export default function VotePage() {
         type: 'cast_vote',
         vote_type: voteType,
         candidate_id: candidateIdToVote,
-        nonce: nonce.current
+        nonce: nonce.current,
+        device_id: deviceId.current
       }));
     } else {
       alert('Aloqa uzildi, sahifani yangilang');

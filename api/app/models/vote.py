@@ -12,6 +12,7 @@ class Vote(Base):
     event_candidate_id = Column(Integer, ForeignKey("event_candidates.id"), nullable=False)
     candidate_id = Column(Integer, ForeignKey("candidates.id"), nullable=False)
     ip_address = Column(String, nullable=False)
+    device_id = Column(String, nullable=True)  # Device fingerprint for multi-device voting
     nonce = Column(String, nullable=False)
     vote_type = Column(String, nullable=False)  # 'yes', 'no', 'neutral'
     timestamp = Column(DateTime, default=datetime.utcnow)

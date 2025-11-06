@@ -236,6 +236,7 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
                 db.expire_all()
                 vote_type = data.get("vote_type")  # 'yes', 'no', 'neutral'
                 nonce = data.get("nonce")
+                device_id = data.get("device_id")  # Device fingerprint for multi-device voting
 
                 if not vote_type or not nonce:
                     await websocket.send_json({
@@ -297,16 +298,27 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
                 event_candidate_id = event_candidate.id
 
                 # Check if already voted for this candidate
-                existing_vote = db.query(Vote).filter(
-                    Vote.event_id == event.id,
-                    Vote.candidate_id == candidate_id,
-                    Vote.ip_address == client_ip
-                ).first()
+                # Use both IP address AND device_id for better duplicate detection
+                if device_id:
+                    # If device_id is provided, check by IP + device_id combination
+                    existing_vote = db.query(Vote).filter(
+                        Vote.event_id == event.id,
+                        Vote.candidate_id == candidate_id,
+                        Vote.ip_address == client_ip,
+                        Vote.device_id == device_id
+                    ).first()
+                else:
+                    # Fallback to IP-only check (legacy behavior)
+                    existing_vote = db.query(Vote).filter(
+                        Vote.event_id == event.id,
+                        Vote.candidate_id == candidate_id,
+                        Vote.ip_address == client_ip
+                    ).first()
 
                 if existing_vote:
                     await websocket.send_json({
                         "type": "error",
-                        "message": "You have already voted for this candidate"
+                        "message": "Siz allaqachon ovoz bergansiz (bu qurilmadan)"
                     })
                     continue
 
@@ -318,6 +330,7 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
                     event_candidate_id=event_candidate_id,
                     candidate_id=candidate_id,
                     ip_address=client_ip,
+                    device_id=device_id,
                     nonce=nonce,
                     vote_type=vote_type,
                     timestamp=datetime.utcnow()
@@ -350,11 +363,20 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
                             if not related_candidate or related_candidate.id == candidate_id:
                                 continue
 
-                            existing_related_vote = db.query(Vote).filter(
-                                Vote.event_id == event.id,
-                                Vote.candidate_id == related_candidate.id,
-                                Vote.ip_address == client_ip
-                            ).first()
+                            # Check with device_id if available
+                            if device_id:
+                                existing_related_vote = db.query(Vote).filter(
+                                    Vote.event_id == event.id,
+                                    Vote.candidate_id == related_candidate.id,
+                                    Vote.ip_address == client_ip,
+                                    Vote.device_id == device_id
+                                ).first()
+                            else:
+                                existing_related_vote = db.query(Vote).filter(
+                                    Vote.event_id == event.id,
+                                    Vote.candidate_id == related_candidate.id,
+                                    Vote.ip_address == client_ip
+                                ).first()
 
                             if existing_related_vote:
                                 continue
@@ -364,6 +386,7 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
                                 event_candidate_id=related.id,
                                 candidate_id=related.candidate_id,
                                 ip_address=client_ip,
+                                device_id=device_id,
                                 nonce=f"{nonce}-no-{related.candidate_id}",
                                 vote_type="no",
                                 timestamp=datetime.utcnow()

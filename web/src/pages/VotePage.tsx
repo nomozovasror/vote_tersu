@@ -379,7 +379,31 @@ export default function VotePage() {
     </div>
   );
 
-  if (!currentCandidate?.candidate) {
+  // Check timer status FIRST before accessing candidate data
+  const timer = currentCandidate?.timer;
+  const timerStarted = !!timer?.started_at;
+  const hasCandidate = !!currentCandidate?.candidate;
+
+  // Don't show candidate info until timer starts
+  if (hasCandidate && !timerStarted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 px-4">
+        <div className="text-center bg-white rounded-2xl shadow-2xl p-12 max-w-md">
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-3">Navbatdagi kandidat</h2>
+          <p className="text-sm text-gray-500">
+            Admin tomonidan timer start qilinishini kuting
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasCandidate) {
     if (shouldShowFinalResults) {
       return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 py-4 md:py-8 px-4">
@@ -403,30 +427,8 @@ export default function VotePage() {
     );
   }
 
-  const timer = currentCandidate.timer;
-  const timerStarted = !!timer?.started_at;
-
-  // Don't show candidate info until timer starts
-  if (!timerStarted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 px-4">
-        <div className="text-center bg-white rounded-2xl shadow-2xl p-12 max-w-md">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
-            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-3">Navbatdagi kandidat</h2>
-          <p className="text-sm text-gray-500">
-            Admin tomonidan timer start qilinishini kuting
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Only access candidate data after timer has started
-  const candidate = currentCandidate.candidate;
+  // Only access candidate data after timer has started (we know it exists because hasCandidate is true)
+  const candidate = currentCandidate.candidate!;
   const votingActive = !!timer?.running && timer.remaining_ms > 0;
   const remainingSeconds = Math.max(0, Math.ceil(countdownMs / 1000));
   const progressPercent = timer?.duration_sec

@@ -403,16 +403,8 @@ export default function VotePage() {
     );
   }
 
-  const candidate = currentCandidate.candidate;
   const timer = currentCandidate.timer;
   const timerStarted = !!timer?.started_at;
-  const votingActive = !!timer?.running && timer.remaining_ms > 0;
-  const remainingSeconds = Math.max(0, Math.ceil(countdownMs / 1000));
-  const progressPercent = timer?.duration_sec
-    ? Math.max(0, Math.min(100, (countdownMs / (timer.duration_sec * 1000)) * 100))
-    : 0;
-  const relatedCandidates = currentCandidate.related_candidates || [];
-  const hasAlternatives = relatedCandidates.length > 1;
 
   // Don't show candidate info until timer starts
   if (!timerStarted) {
@@ -432,6 +424,16 @@ export default function VotePage() {
       </div>
     );
   }
+
+  // Only access candidate data after timer has started
+  const candidate = currentCandidate.candidate;
+  const votingActive = !!timer?.running && timer.remaining_ms > 0;
+  const remainingSeconds = Math.max(0, Math.ceil(countdownMs / 1000));
+  const progressPercent = timer?.duration_sec
+    ? Math.max(0, Math.min(100, (countdownMs / (timer.duration_sec * 1000)) * 100))
+    : 0;
+  const relatedCandidates = currentCandidate.related_candidates || [];
+  const hasAlternatives = relatedCandidates.length > 1;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 py-4 md:py-8 px-4">

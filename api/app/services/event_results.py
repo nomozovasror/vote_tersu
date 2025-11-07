@@ -39,10 +39,17 @@ def calculate_event_results(db: Session, event_id: int) -> Tuple[List[dict], int
         for row in vote_breakdown
     }
 
-    # Get unique voters count (by IP)
-    unique_voters = db.query(func.count(func.distinct(Vote.ip_address))).filter(
+    # Get unique voters count (by IP + device_id combination)
+    # Count distinct (ip_address, device_id) pairs
+    # For votes without device_id, we still count them by IP
+    unique_voters_subquery = db.query(
+        Vote.ip_address,
+        Vote.device_id
+    ).filter(
         Vote.event_id == event_id
-    ).scalar() or 0
+    ).distinct().subquery()
+
+    unique_voters = db.query(func.count()).select_from(unique_voters_subquery).scalar() or 0
 
     results = []
     for idx, event_candidate in enumerate(event_candidates, start=1):

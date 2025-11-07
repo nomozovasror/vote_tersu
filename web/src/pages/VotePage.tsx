@@ -191,7 +191,7 @@ export default function VotePage() {
         if (candidateChanged) {
           setHasVoted(false);
           setSelectedCandidateId(null);
-          nonce.current = crypto.randomUUID();
+          nonce.current = generateUUID();
         }
 
         setCurrentCandidate(newCandidate);

@@ -57,12 +57,13 @@ def calculate_event_results(db: Session, event_id: int) -> Tuple[List[dict], int
         neutral_votes = vote_data["neutral"]
         total_votes = vote_data["total"]
 
-        # Calculate percentages
-        yes_percent = (yes_votes / unique_voters * 100) if unique_voters > 0 else 0
-        no_percent = (no_votes / unique_voters * 100) if unique_voters > 0 else 0
-        neutral_percent = (neutral_votes / unique_voters * 100) if unique_voters > 0 else 0
+        # Calculate percentages based on total votes for THIS candidate
+        # Example: 4 total votes: 2 yes (50%), 1 no (25%), 1 neutral (25%)
+        yes_percent = (yes_votes / total_votes * 100) if total_votes > 0 else 0
+        no_percent = (no_votes / total_votes * 100) if total_votes > 0 else 0
+        neutral_percent = (neutral_votes / total_votes * 100) if total_votes > 0 else 0
 
-        # Determine result - passes if yes votes > 50%
+        # Determine result - passes if yes votes > 50% of THIS candidate's votes
         result = "O'tdi" if yes_percent > 50 else "O'tmadi"
 
         results.append({

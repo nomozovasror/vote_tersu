@@ -205,6 +205,11 @@ export default function DisplayPage() {
     ? Math.max(0, Math.min(100, (remainingSeconds / durationSec) * 100))
     : 0;
 
+  // Debug logging
+  console.log('[DisplayPage] groupResults:', groupResults);
+  console.log('[DisplayPage] showResults:', showResults);
+  console.log('[DisplayPage] isGrouped:', isGrouped);
+
   if (eventCompleted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 text-white relative">
@@ -341,26 +346,26 @@ export default function DisplayPage() {
                         <p className="text-base text-gray-400">Kutilmoqda...</p>
                       </div>
                     ) : !showResults ? (
-                      <div className="text-center py-2">
-                        <div className="text-4xl font-bold mb-1">{remainingSeconds}</div>
-                        <p className="text-sm text-gray-300">soniya</p>
+                      <div className="text-center py-4">
+                        <div className="text-7xl md:text-8xl font-bold mb-2">{remainingSeconds}</div>
+                        <p className="text-lg md:text-xl text-gray-300">soniya</p>
                       </div>
                     ) : (
                       /* Horizontal Layout: Pie Chart + Stats */
                       <div className="w-full flex items-center gap-4">
-                        <div className="relative w-24 h-24 flex-shrink-0">
+                        <div className="relative w-32 h-32 flex-shrink-0">
                           <PieChart results={gr.votes} />
                         </div>
-                        <div className="flex-1 space-y-1.5">
-                          <div className="flex items-center justify-between bg-green-600/30 px-3 py-1.5 rounded-lg">
-                            <span className="text-sm font-semibold">Ha</span>
-                            <span className="text-sm font-bold">
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center justify-between bg-green-600/30 px-4 py-2 rounded-lg">
+                            <span className="text-base font-semibold">Ha</span>
+                            <span className="text-base font-bold">
                               {gr.votes.yes} ({gr.votes.total > 0 ? ((gr.votes.yes / gr.votes.total) * 100).toFixed(1) : 0}%)
                             </span>
                           </div>
-                          <div className="flex items-center justify-between bg-red-600/30 px-3 py-1.5 rounded-lg">
-                            <span className="text-sm font-semibold">Yo'q</span>
-                            <span className="text-sm font-bold">
+                          <div className="flex items-center justify-between bg-red-600/30 px-4 py-2 rounded-lg">
+                            <span className="text-base font-semibold">Yo'q</span>
+                            <span className="text-base font-bold">
                               {gr.votes.no} ({gr.votes.total > 0 ? ((gr.votes.no / gr.votes.total) * 100).toFixed(1) : 0}%)
                             </span>
                           </div>

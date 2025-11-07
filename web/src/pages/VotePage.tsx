@@ -414,6 +414,28 @@ export default function VotePage() {
   const relatedCandidates = currentCandidate.related_candidates || [];
   const hasAlternatives = relatedCandidates.length > 1;
 
+  // Don't show candidate info until timer starts
+  if (!timerStarted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 px-4">
+        <div className="text-center bg-white rounded-2xl shadow-2xl p-12 max-w-md">
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-3">Navbatdagi kandidat</h2>
+          <p className="text-gray-600 mb-2">
+            Kandidat {currentCandidate.index + 1} / {currentCandidate.total}
+          </p>
+          <p className="text-sm text-gray-500">
+            Admin tomonidan timer start qilinishini kuting
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 py-4 md:py-8 px-4">
       <div className="max-w-2xl mx-auto">

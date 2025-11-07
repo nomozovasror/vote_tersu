@@ -425,9 +425,6 @@ export default function VotePage() {
             </svg>
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-3">Navbatdagi kandidat</h2>
-          <p className="text-gray-600 mb-2">
-            Kandidat {currentCandidate.index + 1} / {currentCandidate.total}
-          </p>
           <p className="text-sm text-gray-500">
             Admin tomonidan timer start qilinishini kuting
           </p>

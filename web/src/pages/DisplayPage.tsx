@@ -345,31 +345,45 @@ export default function DisplayPage() {
                       <div className="text-center py-2">
                         <p className="text-base text-gray-400">Kutilmoqda...</p>
                       </div>
-                    ) : !showResults ? (
+                    ) : timerRunning && remainingSeconds > 0 ? (
+                      /* Show timer while voting is active */
                       <div className="text-center py-4">
                         <div className="text-7xl md:text-8xl font-bold mb-2">{remainingSeconds}</div>
                         <p className="text-lg md:text-xl text-gray-300">soniya</p>
                       </div>
-                    ) : (
-                      /* Horizontal Layout: Pie Chart + Stats */
-                      <div className="w-full flex items-center gap-4">
-                        <div className="relative w-32 h-32 flex-shrink-0">
+                    ) : gr.votes ? (
+                      /* Show results when timer has ended (even if no votes yet) */
+                      <div className="w-full flex items-center gap-4 px-4">
+                        <div className="relative w-32 h-32 md:w-40 md:h-40 flex-shrink-0">
                           <PieChart results={gr.votes} />
                         </div>
                         <div className="flex-1 space-y-2">
-                          <div className="flex items-center justify-between bg-green-600/30 px-4 py-2 rounded-lg">
-                            <span className="text-base font-semibold">Ha</span>
-                            <span className="text-base font-bold">
+                          <div className="flex items-center justify-between bg-green-600/30 px-4 py-2.5 rounded-lg">
+                            <span className="text-base md:text-lg font-semibold">Ha</span>
+                            <span className="text-base md:text-lg font-bold">
                               {gr.votes.yes} ({gr.votes.total > 0 ? ((gr.votes.yes / gr.votes.total) * 100).toFixed(1) : 0}%)
                             </span>
                           </div>
-                          <div className="flex items-center justify-between bg-red-600/30 px-4 py-2 rounded-lg">
-                            <span className="text-base font-semibold">Yo'q</span>
-                            <span className="text-base font-bold">
+                          <div className="flex items-center justify-between bg-red-600/30 px-4 py-2.5 rounded-lg">
+                            <span className="text-base md:text-lg font-semibold">Yo'q</span>
+                            <span className="text-base md:text-lg font-bold">
                               {gr.votes.no} ({gr.votes.total > 0 ? ((gr.votes.no / gr.votes.total) * 100).toFixed(1) : 0}%)
                             </span>
                           </div>
+                          {gr.votes.neutral > 0 && (
+                            <div className="flex items-center justify-between bg-gray-600/30 px-4 py-2.5 rounded-lg">
+                              <span className="text-base md:text-lg font-semibold">Betaraf</span>
+                              <span className="text-base md:text-lg font-bold">
+                                {gr.votes.neutral} ({gr.votes.total > 0 ? ((gr.votes.neutral / gr.votes.total) * 100).toFixed(1) : 0}%)
+                              </span>
+                            </div>
+                          )}
                         </div>
+                      </div>
+                    ) : (
+                      /* No votes data available */
+                      <div className="text-center py-2">
+                        <p className="text-base text-gray-400">Ovozlar kutilmoqda...</p>
                       </div>
                     )}
                   </div>

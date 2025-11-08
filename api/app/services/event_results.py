@@ -88,7 +88,10 @@ def calculate_event_results(db: Session, event_id: int) -> Tuple[List[dict], int
             "neutral_votes": neutral_votes,
             "neutral_percent": round(neutral_percent, 1),
             "total_votes": total_votes,
-            "result": result
+            "result": result,
+            # For frontend compatibility (VoteTally interface)
+            "votes": total_votes,
+            "percent": round(yes_percent, 1)
         })
 
     return results, unique_voters

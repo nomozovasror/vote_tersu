@@ -350,7 +350,9 @@ export default function VotePage() {
                   {item.election_time && (
                     <p className="text-xs text-gray-500">{formatDateTime(item.election_time)}</p>
                   )}
-                  <p className="text-sm md:text-base text-green-600 font-semibold mt-1">{item.percent.toFixed(1)}%</p>
+                  <p className="text-sm md:text-base text-green-600 font-semibold mt-1">
+                    {item.percent !== undefined && item.percent !== null ? item.percent.toFixed(1) : '0.0'}%
+                  </p>
                   {item.description && (
                     <p className="text-xs text-gray-500 mt-1 line-clamp-1">{item.description}</p>
                   )}

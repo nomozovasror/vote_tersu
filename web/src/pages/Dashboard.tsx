@@ -40,7 +40,7 @@ export default function Dashboard() {
 
   const createEvent = async () => {
     if (!eventName.trim()) {
-      warning('Event nomini kiriting!');
+      warning('Tanlov nomini kiriting!');
       return;
     }
 
@@ -50,14 +50,14 @@ export default function Dashboard() {
         candidate_ids: [],
         duration_sec: durationSec
       });
-      success('Event muvaffaqiyatli yaratildi!');
+      success('Tanlov muvaffaqiyatli yaratildi!');
       setShowCreateModal(false);
       setEventName('');
       setDurationSec(15);
       // Navigate to event manage page
       navigate(`/admin/event/${response.data.id}`);
     } catch (err: any) {
-      error(err.response?.data?.detail || 'Event yaratishda xatolik yuz berdi');
+      error(err.response?.data?.detail || 'Tanlov yaratishda xatolik yuz berdi');
     }
   };
 
@@ -65,7 +65,7 @@ export default function Dashboard() {
     const url = `${window.location.origin}/vote/${link}`;
     const copied = await copyToClipboard(url);
     if (copied) {
-      success('Vote link nusxalandi!');
+      success('ovoz berish havolasi nusxalandi!');
     } else {
       // Fallback: Show modal with link
       setModalLink({ type: 'Vote', url });
@@ -77,7 +77,7 @@ export default function Dashboard() {
     const url = `${window.location.origin}/display/${link}`;
     const copied = await copyToClipboard(url);
     if (copied) {
-      success('Display link nusxalandi!');
+      success('Display havolasi nusxalandi!');
     } else {
       // Fallback: Show modal with link
       setModalLink({ type: 'Display', url });
@@ -86,7 +86,7 @@ export default function Dashboard() {
   };
 
   const archiveEvent = async (eventId: number) => {
-    if (!confirm('Eventni arxivga o\'tkazmoqchimisiz? Event faqat ko\'rish rejimida qoladi.')) {
+    if (!confirm('Tanlov arxivga o\'tkazmoqchimisiz? Tanlov faqat ko\'rish rejimida qoladi.')) {
       return;
     }
 
@@ -95,14 +95,14 @@ export default function Dashboard() {
       setEvents(prev => prev.map(event =>
         event.id === eventId ? response.data : event
       ));
-      success('Event arxivlandi');
+      success('Tanlov arxivlandi');
     } catch (err: any) {
-      error(err.response?.data?.detail || 'Eventni arxivlashda xatolik yuz berdi');
+      error(err.response?.data?.detail || 'Tanlovni arxivlashda xatolik yuz berdi');
     }
   };
 
   const deleteEvent = async (eventId: number) => {
-    if (!confirm('Bu eventni o\'chirmoqchimisiz? Barcha natijalar o\'chiriladi.')) {
+    if (!confirm('Bu tanlovni o\'chirmoqchimisiz? Barcha natijalar o\'chiriladi.')) {
       return;
     }
 
@@ -111,7 +111,7 @@ export default function Dashboard() {
       setEvents(prev => prev.filter(event => event.id !== eventId));
       success('Event o\'chirildi');
     } catch (err: any) {
-      error(err.response?.data?.detail || 'Eventni o\'chirishda xatolik yuz berdi');
+      error(err.response?.data?.detail || 'Tanlovni o\'chirishda xatolik yuz berdi');
     }
   };
 
@@ -182,7 +182,7 @@ export default function Dashboard() {
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                Event Yaratish
+                Tanlov Yaratish
               </button>
               <button
                 onClick={handleLogout}
@@ -201,7 +201,7 @@ export default function Dashboard() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Eventlar</h2>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Tanlovlar</h2>
           <p className="text-gray-600">Barcha ovoz berish eventlarini boshqaring</p>
         </div>
 
@@ -212,8 +212,8 @@ export default function Dashboard() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Event topilmadi</h3>
-            <p className="text-gray-600 mb-6">Yangi event yaratish uchun yuqoridagi tugmani bosing</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Tanlov topilmadi</h3>
+            <p className="text-gray-600 mb-6">Yangi tanlov yaratish uchun yuqoridagi tugmani bosing</p>
             <button
               onClick={() => setShowCreateModal(true)}
               className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all"
@@ -221,7 +221,7 @@ export default function Dashboard() {
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              Birinchi Event Yaratish
+              Birinchi Tanlov Yaratish
             </button>
           </div>
         ) : (
@@ -319,16 +319,16 @@ export default function Dashboard() {
                 <svg className="w-7 h-7 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                 </svg>
-                Yangi Event Yaratish
+                Yangi tanlov Yaratish
               </h2>
-              <p className="text-blue-100 text-sm mt-1">Ovoz berish eventini sozlang</p>
+              <p className="text-blue-100 text-sm mt-1">Ovoz berish tanlovini sozlang</p>
             </div>
 
             {/* Modal Body */}
             <div className="p-8 space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Event Nomi *
+                  Tanlov Nomi *
                 </label>
                 <input
                   type="text"
@@ -375,7 +375,7 @@ export default function Dashboard() {
                     </svg>
                   </div>
                   <p className="text-sm text-blue-800 leading-relaxed">
-                    Event yaratilgandan so'ng avtomatik ravishda kandidatlarni boshqarish sahifasiga o'tasiz
+                    Tanlov yaratilgandan so'ng avtomatik ravishda kandidatlarni boshqarish sahifasiga o'tasiz
                   </p>
                 </div>
               </div>

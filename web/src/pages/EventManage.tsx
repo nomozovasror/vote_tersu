@@ -214,13 +214,13 @@ export default function EventManage() {
     }
 
     if (missingPositionCount > 0) {
-      showError('Event boshlashdan oldin barcha kandidatlar uchun qaysi lavozimga saylanishi kerakligini kiriting.');
+      showError('Tanlov boshlashdan oldin barcha kandidatlar uchun qaysi lavozimga saylanishi kerakligini kiriting.');
       return;
     }
 
     const result = await showConfirm(
-      'Eventni boshlashni tasdiqlaysizmi?',
-      'Event boshlash',
+      'Tanlovni boshlashni tasdiqlaysizmi?',
+      'Tanlov boshlash',
       'Ha, boshlash',
       'Bekor qilish'
     );
@@ -228,21 +228,21 @@ export default function EventManage() {
     if (!result.isConfirmed) return;
 
     try {
-      showLoading('Event boshlanmoqda...');
+      showLoading('Tanlov boshlanmoqda...');
       await api.post(`/events/${id}/start`);
       fetchEventDetails();
       closeAlert();
       showSuccess('Event muvaffaqiyatli boshlandi!');
     } catch (error: any) {
       closeAlert();
-      showError(error.response?.data?.detail || 'Event boshlashda xatolik');
+      showError(error.response?.data?.detail || 'Tanlov boshlashda xatolik');
     }
   };
 
   const stopEvent = async () => {
     const result = await showConfirm(
-      'Eventni to\'xtatishni tasdiqlaysizmi?',
-      'Event to\'xtatish',
+      'Tanlovni to\'xtatishni tasdiqlaysizmi?',
+      'Tanlov to\'xtatish',
       'Ha, to\'xtatish',
       'Bekor qilish'
     );
@@ -250,14 +250,14 @@ export default function EventManage() {
     if (!result.isConfirmed) return;
 
     try {
-      showLoading('Event to\'xtatilmoqda...');
+      showLoading('Tanlov to\'xtatilmoqda...');
       await api.post(`/events/${id}/stop`);
       fetchEventDetails();
       closeAlert();
       showSuccess('Event to\'xtatildi');
     } catch (error: any) {
       closeAlert();
-      showError(error.response?.data?.detail || 'Event to\'xtatishda xatolik');
+      showError(error.response?.data?.detail || 'Tanlovni to\'xtatishda xatolik');
     }
   };
 
@@ -428,7 +428,7 @@ export default function EventManage() {
       <div className="max-w-7xl mx-auto px-4">
         {/* Event Controls */}
         <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-          <h2 className="text-xl font-bold mb-6">Event Boshqaruvi</h2>
+          <h2 className="text-xl font-bold mb-6">Tanlov Boshqaruvi</h2>
 
           {/* Status Info */}
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6 border border-blue-200">
@@ -496,7 +496,7 @@ export default function EventManage() {
                     : 'bg-gray-400 cursor-not-allowed'
                 }`}
               >
-                ▶️ Event Boshlash
+                ▶️ Tanlovni Boshlash
               </button>
             )}
 
@@ -525,7 +525,7 @@ export default function EventManage() {
                   onClick={stopEvent}
                   className="bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white px-6 py-3 rounded-lg hover:shadow-lg font-semibold transition-all"
                 >
-                  ⏹️ Event To'xtatish
+                  ⏹️ Tanlovni To'xtatish
                 </button>
               </>
             )}
@@ -561,7 +561,7 @@ export default function EventManage() {
                 Hozircha kandidatlar yo'q
               </p>
               <p className="text-yellow-600 mb-4">
-                Event boshlash uchun kamida bitta kandidat qo'shing
+                Tanlov boshlash uchun kamida bitta kandidat qo'shing
               </p>
               <button
                 onClick={() => setShowAddModal(true)}
@@ -751,11 +751,11 @@ export default function EventManage() {
           <ol className="list-decimal list-inside space-y-1 text-blue-800">
             <li>"+ Kandidat Qo'shish" tugmasi bilan kandidatlar qo'shing</li>
             <li>▲▼ tugmalar yordamida tartibni belgilang</li>
-            <li>"Event Boshlash" tugmasi bilan eventni faollashtiring</li>
+            <li>"Tanlov Boshlash" tugmasi bilan tanlovni faollashtiring</li>
             <li>Har bir kandidat uchun {event.duration_sec} soniya ajratiladi</li>
             <li>"Timer Start" tugmasi orqali ovoz berishni boshlang</li>
             <li>"Keyingi Kandidat" tugmasi bilan navbatdagi kandidatga o'ting</li>
-            <li>Barcha kandidatlar yakunlangandan keyin eventni to'xtating</li>
+            <li>Barcha kandidatlar yakunlangandan keyin tanlovni to'xtating</li>
           </ol>
         </div>
       </div>

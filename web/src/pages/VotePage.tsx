@@ -586,7 +586,7 @@ export default function VotePage() {
                 </div>
 
                 {/* Floating Vote Button */}
-                {selectedCandidateId && (
+                {selectedCandidateId ? (
                   <div className="fixed bottom-0 left-0 right-0 bg-white border-t-4 border-green-500 shadow-2xl p-4 z-50">
                     <div className="max-w-4xl mx-auto">
                       <div className="flex items-center justify-between gap-4">
@@ -604,6 +604,18 @@ export default function VotePage() {
                           <span>Ovoz berish</span>
                         </button>
                       </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="fixed bottom-0 left-0 right-0 bg-white border-t-4 border-gray-500 shadow-2xl p-4 z-50">
+                    <div className="max-w-4xl mx-auto">
+                      <button
+                        onClick={() => castVote('neutral')}
+                        className="w-full bg-gray-600 text-white px-8 py-4 rounded-xl font-bold text-xl hover:bg-gray-700 transition-colors shadow-lg flex items-center justify-center gap-2"
+                      >
+                        <span>○</span>
+                        <span>Betaraf qolish</span>
+                      </button>
                     </div>
                   </div>
                 )}

@@ -546,7 +546,7 @@ export default function VotePage() {
                     return (
                       <button
                         key={rc.id}
-                        onClick={() => setSelectedCandidateId(rc.id)}
+                        onClick={() => setSelectedCandidateId(isSelected ? null : rc.id)}
                         className={`group relative p-5 rounded-xl border-2 transition-all duration-200 text-left ${
                           isSelected
                             ? 'border-green-500 bg-green-50 shadow-xl scale-105'

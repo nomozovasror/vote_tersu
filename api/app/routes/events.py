@@ -5,7 +5,7 @@ from typing import List
 from datetime import datetime
 import uuid
 from ..core.database import get_db
-from ..core.schemas import EventCreate, EventResponse, EventWithCandidates
+from ..core.schemas import EventCreate, EventUpdate, EventResponse, EventWithCandidates
 from ..core.dependencies import get_current_user
 from ..models.event import Event, EventCandidate, EventStatus
 from ..models.candidate import Candidate
@@ -338,6 +338,130 @@ def download_event_results_by_link(link: str, db: Session = Depends(get_db)):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@router.post("/{event_id}/duplicate", response_model=EventResponse)
+def duplicate_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_user)
+):
+    """Duplicate an event with all its candidates and settings (admin only)"""
+    original_event = db.query(Event).filter(Event.id == event_id).first()
+    if not original_event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found"
+        )
+
+    # Get all event candidates with their order and groups
+    original_candidates = db.query(EventCandidate).filter(
+        EventCandidate.event_id == event_id
+    ).order_by(EventCandidate.order).all()
+
+    # Generate new unique link
+    new_link = str(uuid.uuid4())[:8]
+
+    # Create new event with same settings
+    new_event = Event(
+        name=f"{original_event.name} (Copy)",
+        link=new_link,
+        duration_sec=original_event.duration_sec,
+        status=EventStatus.pending,
+        current_candidate_index=0
+    )
+    db.add(new_event)
+    db.flush()
+
+    # Copy all candidates with same order and groups
+    for original_ec in original_candidates:
+        new_ec = EventCandidate(
+            event_id=new_event.id,
+            candidate_id=original_ec.candidate_id,
+            order=original_ec.order,
+            candidate_group=original_ec.candidate_group
+        )
+        db.add(new_ec)
+
+    # Create display state for new event
+    display_state = DisplayState(event_id=new_event.id)
+    db.add(display_state)
+
+    db.commit()
+    db.refresh(new_event)
+    return new_event
+
+
+@router.post("/{event_id}/reset", response_model=EventResponse)
+def reset_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_user)
+):
+    """Reset an event - clear all votes and restart from beginning (admin only, not for archived events)"""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found"
+        )
+
+    # Prevent resetting archived events
+    if event.status == EventStatus.archived:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot reset archived events"
+        )
+
+    # Delete all votes for this event
+    db.query(Vote).filter(Vote.event_id == event_id).delete(synchronize_session=False)
+
+    # Reset event_candidates timer_started_at
+    db.query(EventCandidate).filter(
+        EventCandidate.event_id == event_id
+    ).update({"timer_started_at": None}, synchronize_session=False)
+
+    # Reset event status and times
+    event.status = EventStatus.pending
+    event.start_time = None
+    event.end_time = None
+    event.current_candidate_index = 0
+
+    # Reset display state
+    display_state = db.query(DisplayState).filter(DisplayState.event_id == event_id).first()
+    if display_state:
+        display_state.current_candidate_id = None
+        display_state.timer_started_at = None
+
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+@router.put("/{event_id}", response_model=EventResponse)
+def update_event(
+    event_id: int,
+    event_update: EventUpdate,
+    db: Session = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_user)
+):
+    """Update event details (admin only)"""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found"
+        )
+
+    # Update fields if provided
+    if event_update.name is not None:
+        event.name = event_update.name
+    if event_update.duration_sec is not None:
+        event.duration_sec = event_update.duration_sec
+
+    db.commit()
+    db.refresh(event)
+    return event
 
 
 @router.delete("/{event_id}", status_code=status.HTTP_200_OK)

@@ -278,9 +278,9 @@ export default function VotePage() {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 px-4">
         <div className="text-center">
           <div className="text-2xl md:text-3xl font-bold text-yellow-600 mb-4">
-            Bu event hozir faol emas
+            Bu tanlov hozir faol emas
           </div>
-          <p className="text-gray-600">Admin tomonidan event boshlanishini kuting</p>
+          <p className="text-gray-600">Admin tomonidan tanlov boshlanishini kuting</p>
         </div>
       </div>
     );
@@ -610,11 +610,11 @@ export default function VotePage() {
                   <div className="fixed bottom-0 left-0 right-0 bg-white border-t-4 border-gray-500 shadow-2xl p-4 z-50">
                     <div className="max-w-4xl mx-auto">
                       <button
-                        onClick={() => castVote('neutral')}
+                        onClick={() => castVote('neutral', relatedCandidates[0]?.id)}
                         className="w-full bg-gray-600 text-white px-8 py-4 rounded-xl font-bold text-xl hover:bg-gray-700 transition-colors shadow-lg flex items-center justify-center gap-2"
                       >
                         <span>○</span>
-                        <span>Betaraf qolish</span>
+                        <span>Betaraf qolish (barcha nomzodlar uchun)</span>
                       </button>
                     </div>
                   </div>

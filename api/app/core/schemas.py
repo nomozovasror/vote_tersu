@@ -64,6 +64,11 @@ class EventCreate(BaseModel):
     duration_sec: int = 15
 
 
+class EventUpdate(BaseModel):
+    name: Optional[str] = None
+    duration_sec: Optional[int] = None
+
+
 class EventResponse(BaseModel):
     id: int
     name: str

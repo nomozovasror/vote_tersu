@@ -339,8 +339,8 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
 
                 auto_voted_candidate_ids: list[int] = []
 
-                # Auto-vote logic: if "yes" for one candidate in a group, others get "no"
-                if vote_type == "yes" and candidate_record:
+                # Auto-vote logic for grouped candidates
+                if candidate_record:
                     # Get current event_candidate to check for group
                     current_event_candidate = db.query(EventCandidate).filter(
                         EventCandidate.event_id == event.id,
@@ -357,42 +357,54 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
                             EventCandidate.candidate_group == current_event_candidate.candidate_group
                         ).all()
 
-                        # Auto-vote "no" for other candidates in the group
-                        for related in related_event_candidates:
-                            related_candidate = related.candidate
-                            if not related_candidate or related_candidate.id == candidate_id:
-                                continue
+                        # Determine auto-vote type based on user's vote
+                        if vote_type == "yes":
+                            # If "yes" for one candidate, others get "no"
+                            auto_vote_type = "no"
+                        elif vote_type == "neutral":
+                            # If "neutral", all other candidates also get "neutral"
+                            auto_vote_type = "neutral"
+                        else:
+                            # If "no", no auto-voting needed
+                            auto_vote_type = None
 
-                            # Check with device_id if available
-                            if device_id:
-                                existing_related_vote = db.query(Vote).filter(
-                                    Vote.event_id == event.id,
-                                    Vote.candidate_id == related_candidate.id,
-                                    Vote.ip_address == client_ip,
-                                    Vote.device_id == device_id
-                                ).first()
-                            else:
-                                existing_related_vote = db.query(Vote).filter(
-                                    Vote.event_id == event.id,
-                                    Vote.candidate_id == related_candidate.id,
-                                    Vote.ip_address == client_ip
-                                ).first()
+                        # Auto-vote for other candidates in the group
+                        if auto_vote_type:
+                            for related in related_event_candidates:
+                                related_candidate = related.candidate
+                                if not related_candidate or related_candidate.id == candidate_id:
+                                    continue
 
-                            if existing_related_vote:
-                                continue
+                                # Check with device_id if available
+                                if device_id:
+                                    existing_related_vote = db.query(Vote).filter(
+                                        Vote.event_id == event.id,
+                                        Vote.candidate_id == related_candidate.id,
+                                        Vote.ip_address == client_ip,
+                                        Vote.device_id == device_id
+                                    ).first()
+                                else:
+                                    existing_related_vote = db.query(Vote).filter(
+                                        Vote.event_id == event.id,
+                                        Vote.candidate_id == related_candidate.id,
+                                        Vote.ip_address == client_ip
+                                    ).first()
 
-                            no_vote = Vote(
-                                event_id=event.id,
-                                event_candidate_id=related.id,
-                                candidate_id=related.candidate_id,
-                                ip_address=client_ip,
-                                device_id=device_id,
-                                nonce=f"{nonce}-no-{related.candidate_id}",
-                                vote_type="no",
-                                timestamp=datetime.utcnow()
-                            )
-                            db.add(no_vote)
-                            auto_voted_candidate_ids.append(related.candidate_id)
+                                if existing_related_vote:
+                                    continue
+
+                                auto_vote = Vote(
+                                    event_id=event.id,
+                                    event_candidate_id=related.id,
+                                    candidate_id=related.candidate_id,
+                                    ip_address=client_ip,
+                                    device_id=device_id,
+                                    nonce=f"{nonce}-{auto_vote_type}-{related.candidate_id}",
+                                    vote_type=auto_vote_type,
+                                    timestamp=datetime.utcnow()
+                                )
+                                db.add(auto_vote)
+                                auto_voted_candidate_ids.append(related.candidate_id)
 
                 db.commit()
 

@@ -44,6 +44,8 @@ export default function EventManage() {
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [results, setResults] = useState<any[]>([]);
   const [totalParticipants, setTotalParticipants] = useState(0);
+  const [showEditEventModal, setShowEditEventModal] = useState(false);
+  const [editEventName, setEditEventName] = useState('');
   const navigate = useNavigate();
 
   const formatDateTime = (value?: string | null) => {
@@ -261,6 +263,53 @@ export default function EventManage() {
     }
   };
 
+  const resetEvent = async () => {
+    const result = await showConfirm(
+      'Tanlovni qayta boshlashni tasdiqlaysizmi? Barcha ovozlar va natijalar o\'chiriladi!',
+      'Tanlovni Qayta Boshlash',
+      'Ha, qayta boshlash',
+      'Bekor qilish'
+    );
+
+    if (!result.isConfirmed) return;
+
+    try {
+      showLoading('Tanlov qayta boshlanmoqda...');
+      await api.post(`/events/${id}/reset`);
+      await fetchEventDetails();
+      await fetchCurrentCandidate();
+      closeAlert();
+      showSuccess('Tanlov muvaffaqiyatli qayta boshlandi! Barcha ovozlar tozalandi.');
+    } catch (error: any) {
+      closeAlert();
+      showError(error.response?.data?.detail || 'Tanlovni qayta boshlashda xatolik');
+    }
+  };
+
+  const updateEventName = async () => {
+    if (!editEventName.trim()) {
+      showError('Tanlov nomini kiriting!');
+      return;
+    }
+
+    try {
+      showLoading('Tanlov nomi o\'zgartirilmoqda...');
+      await api.put(`/events/${id}`, { name: editEventName });
+      await fetchEventDetails();
+      setShowEditEventModal(false);
+      closeAlert();
+      showSuccess('Tanlov nomi muvaffaqiyatli o\'zgartirildi!');
+    } catch (error: any) {
+      closeAlert();
+      showError(error.response?.data?.detail || 'Tanlov nomini o\'zgartirishda xatolik');
+    }
+  };
+
+  const openEditEventModal = () => {
+    setEditEventName(event?.name || '');
+    setShowEditEventModal(true);
+  };
+
 
   const viewResults = async () => {
     try {
@@ -415,7 +464,18 @@ export default function EventManage() {
     <div className="min-h-screen bg-gray-100">
       <nav className="bg-white shadow-lg mb-8">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-800">{event.name}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-gray-800">{event.name}</h1>
+            <button
+              onClick={openEditEventModal}
+              className="text-blue-600 hover:text-blue-700 p-2 rounded-lg hover:bg-blue-50 transition-all"
+              title="Tanlov nomini o'zgartirish"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+          </div>
           <button
             onClick={() => navigate('/admin/dashboard')}
             className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
@@ -532,10 +592,19 @@ export default function EventManage() {
 
             <button
               onClick={viewResults}
-              className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white px-6 py-3 rounded-lg hover:shadow-lg font-semibold transition-all ml-auto"
+              className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white px-6 py-3 rounded-lg hover:shadow-lg font-semibold transition-all"
             >
               📊 Natijalarni Ko'rish
             </button>
+
+            {event?.status !== EventStatus.ARCHIVED && (
+              <button
+                onClick={resetEvent}
+                className="bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white px-6 py-3 rounded-lg hover:shadow-lg font-semibold transition-all ml-auto"
+              >
+                🔄 Tanlovni Qayta Boshlash
+              </button>
+            )}
           </div>
         </div>
 
@@ -1073,6 +1142,67 @@ export default function EventManage() {
                   Hozircha natijalar mavjud emas
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Event Name Modal */}
+      {showEditEventModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-8 py-6">
+              <h2 className="text-2xl font-bold text-white flex items-center">
+                <svg className="w-7 h-7 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Tanlov Nomini O'zgartirish
+              </h2>
+              <p className="text-blue-100 text-sm mt-1">Yangi nom kiriting</p>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-8 space-y-6">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Tanlov Nomi *
+                </label>
+                <input
+                  type="text"
+                  value={editEventName}
+                  onChange={(e) => setEditEventName(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  placeholder="Tanlov nomini kiriting"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      updateEventName();
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="flex space-x-3 pt-2">
+                <button
+                  onClick={updateEventName}
+                  className="flex-1 inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-md hover:shadow-lg transition-all"
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Saqlash
+                </button>
+                <button
+                  onClick={() => setShowEditEventModal(false)}
+                  className="flex-1 inline-flex items-center justify-center px-6 py-3 border border-gray-300 text-base font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all"
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Bekor qilish
+                </button>
+              </div>
             </div>
           </div>
         </div>

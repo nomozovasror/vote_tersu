@@ -17,6 +17,7 @@ export default function VotePage() {
   const nonce = useRef(generateUUID());
   const deviceId = useRef(getDeviceId());
   const previousCandidateId = useRef<number | null>(null);
+  const votedCandidates = useRef<Set<number>>(new Set());
   const countdownTarget = useRef<number | null>(null);
   const [countdownMs, setCountdownMs] = useState(0);
   const [results, setResults] = useState<VoteTally[]>([]);
@@ -189,9 +190,13 @@ export default function VotePage() {
         }
 
         if (candidateChanged) {
-          setHasVoted(false);
+          // Check if we already voted for this new candidate
+          const alreadyVoted = incomingId !== null && votedCandidates.current.has(incomingId);
+          setHasVoted(alreadyVoted);
           setSelectedCandidateId(null);
-          nonce.current = generateUUID();
+          if (!alreadyVoted) {
+            nonce.current = generateUUID();
+          }
         }
 
         setCurrentCandidate(newCandidate);
@@ -206,6 +211,44 @@ export default function VotePage() {
         }
       } else if (data.type === 'vote_confirmed') {
         setHasVoted(true);
+        // Track that we voted for this candidate
+        if (data.candidate_id) {
+          votedCandidates.current.add(data.candidate_id);
+        }
+        // Also track auto-voted candidates (for grouped voting)
+        if (data.auto_voted_candidates && Array.isArray(data.auto_voted_candidates)) {
+          data.auto_voted_candidates.forEach((id: number) => {
+            votedCandidates.current.add(id);
+          });
+        }
+      } else if (data.type === 'votes_cleared') {
+        // Admin cleared votes - allow user to vote again
+        const clearedCandidateId = data.candidate_id;
+        const clearedCandidateIds = data.candidate_ids || [];
+
+        console.log('Votes cleared event received:', { clearedCandidateId, clearedCandidateIds });
+
+        // Remove cleared candidates from voted tracking
+        if (clearedCandidateId) {
+          votedCandidates.current.delete(clearedCandidateId);
+        }
+        if (clearedCandidateIds && clearedCandidateIds.length > 0) {
+          clearedCandidateIds.forEach((id: number) => {
+            votedCandidates.current.delete(id);
+          });
+        }
+
+        // Check if current candidate's votes were cleared
+        const currentCandidateId = currentCandidate?.candidate?.id;
+        if (currentCandidateId && (
+          clearedCandidateId === currentCandidateId ||
+          clearedCandidateIds.includes(currentCandidateId)
+        )) {
+          console.log('Current candidate votes cleared, resetting hasVoted');
+          setHasVoted(false);
+          setSelectedCandidateId(null);
+          nonce.current = generateUUID();
+        }
       } else if (data.type === 'error') {
         alert(data.message);
       }

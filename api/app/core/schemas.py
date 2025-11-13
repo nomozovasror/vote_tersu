@@ -77,6 +77,7 @@ class EventResponse(BaseModel):
     status: EventStatus
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
+    candidate_count: Optional[int] = 0
 
     class Config:
         from_attributes = True

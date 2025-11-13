@@ -337,6 +337,36 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
                 )
                 db.add(vote)
 
+                # Update participant count for this candidate
+                # Count unique participants (by IP+device_id combination)
+                participant_event_candidate = db.query(EventCandidate).filter(
+                    EventCandidate.event_id == event.id,
+                    EventCandidate.candidate_id == candidate_id
+                ).first()
+
+                if participant_event_candidate:
+                    # Count unique participants for this candidate
+                    # Use func.count(func.distinct()) for accurate counting
+                    from sqlalchemy import func
+                    if device_id:
+                        # Count unique (ip_address, device_id) pairs
+                        unique_participants = db.query(
+                            func.count(func.distinct(Vote.ip_address + '_' + func.coalesce(Vote.device_id, '')))
+                        ).filter(
+                            Vote.event_id == event.id,
+                            Vote.candidate_id == candidate_id
+                        ).scalar() or 0
+                    else:
+                        # Count unique ip_address
+                        unique_participants = db.query(
+                            func.count(func.distinct(Vote.ip_address))
+                        ).filter(
+                            Vote.event_id == event.id,
+                            Vote.candidate_id == candidate_id
+                        ).scalar() or 0
+
+                    participant_event_candidate.participant_count = unique_participants
+
                 auto_voted_candidate_ids: list[int] = []
 
                 # Auto-vote logic for grouped candidates
@@ -406,6 +436,25 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
                                 db.add(auto_vote)
                                 auto_voted_candidate_ids.append(related.candidate_id)
 
+                                # Update participant count for auto-voted candidates
+                                from sqlalchemy import func
+                                if device_id:
+                                    unique_participants = db.query(
+                                        func.count(func.distinct(Vote.ip_address + '_' + func.coalesce(Vote.device_id, '')))
+                                    ).filter(
+                                        Vote.event_id == event.id,
+                                        Vote.candidate_id == related.candidate_id
+                                    ).scalar() or 0
+                                else:
+                                    unique_participants = db.query(
+                                        func.count(func.distinct(Vote.ip_address))
+                                    ).filter(
+                                        Vote.event_id == event.id,
+                                        Vote.candidate_id == related.candidate_id
+                                    ).scalar() or 0
+
+                                related.participant_count = unique_participants
+
                 db.commit()
 
                 db.expire_all()
@@ -415,7 +464,7 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
                     "type": "vote_confirmed",
                     "vote_type": vote_type,
                     "candidate_id": candidate_id,
-                    "which_position": candidate_position_value(candidate_record),
+                    "which_position": candidate_position_value(candidate_record) if candidate_record else None,
                     "auto_voted_candidates": auto_voted_candidate_ids
                 })
 

@@ -27,7 +27,8 @@ class ConnectionManager:
             for connection in self.active_connections[event_link]:
                 try:
                     await connection.send_json(message)
-                except:
+                except (RuntimeError, ConnectionError, Exception) as e:
+                    # Only catch connection-related errors, not system errors
                     dead_connections.append(connection)
 
             # Remove dead connections
@@ -51,7 +52,8 @@ class ConnectionManager:
             for connection in self.display_connections[event_link]:
                 try:
                     await connection.send_json(message)
-                except:
+                except (RuntimeError, ConnectionError, Exception) as e:
+                    # Only catch connection-related errors, not system errors
                     dead_connections.append(connection)
 
             # Remove dead connections

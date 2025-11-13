@@ -74,3 +74,11 @@ def ensure_schema():
                 "ALTER TABLE votes ADD COLUMN device_id VARCHAR"
             ))
             connection.commit()
+
+        # Ensure participant_count exists on event_candidates
+        event_candidate_columns = table_columns("event_candidates")
+        if event_candidate_columns and "participant_count" not in event_candidate_columns:
+            connection.execute(text(
+                "ALTER TABLE event_candidates ADD COLUMN participant_count INTEGER DEFAULT 0"
+            ))
+            connection.commit()

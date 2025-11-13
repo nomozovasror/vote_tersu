@@ -244,7 +244,23 @@ def get_events(
 ):
     """Get all events (admin only)"""
     events = db.query(Event).order_by(Event.id.desc()).all()
-    return events
+
+    # Add candidate count to each event
+    result = []
+    for event in events:
+        event_dict = {
+            "id": event.id,
+            "name": event.name,
+            "link": event.link,
+            "duration_sec": event.duration_sec,
+            "status": event.status,
+            "start_time": event.start_time,
+            "end_time": event.end_time,
+            "candidate_count": db.query(EventCandidate).filter(EventCandidate.event_id == event.id).count()
+        }
+        result.append(event_dict)
+
+    return result
 
 
 @router.get("/{event_id}", response_model=EventWithCandidates)

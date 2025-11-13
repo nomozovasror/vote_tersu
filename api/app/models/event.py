@@ -39,6 +39,7 @@ class EventCandidate(Base):
     status = Column(String, default="pending")  # pending, active, completed
     timer_started_at = Column(DateTime, nullable=True)  # When timer was started for this candidate
     candidate_group = Column(String, nullable=True)  # Group identifier for grouped voting
+    participant_count = Column(Integer, default=0)  # Number of unique participants who voted
 
     # Relationships
     event = relationship("Event", back_populates="event_candidates")

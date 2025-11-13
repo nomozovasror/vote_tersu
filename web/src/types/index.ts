@@ -27,6 +27,7 @@ export interface Event {
   start_time?: string;
   end_time?: string;
   candidates?: Candidate[];
+  candidate_count?: number;
 }
 
 export interface VoteTally {

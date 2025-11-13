@@ -192,9 +192,10 @@ export default function EventManage() {
 
     try {
       showLoading('Group yaratilmoqda...');
+      const currentGroupName = groupName.trim(); // Save group name before clearing state
       await api.post(`/event-management/${id}/set-group`, {
         event_candidate_ids: selectedForGroup,
-        group_name: groupName.trim()
+        group_name: currentGroupName
       });
 
       closeAlert();
@@ -202,7 +203,7 @@ export default function EventManage() {
       setSelectedForGroup([]);
       setGroupName('');
       fetchEventDetails();
-      showToast(`Group "${groupName}" yaratildi!`, 'success');
+      showToast(`Group "${currentGroupName}" yaratildi!`, 'success');
     } catch (error: any) {
       closeAlert();
       showError(error.response?.data?.detail || 'Group yaratishda xatolik');
@@ -310,6 +311,71 @@ export default function EventManage() {
     setShowEditEventModal(true);
   };
 
+  const clearCandidateVotes = async (candidateId: number, candidateName: string) => {
+    const result = await showConfirm(
+      `${candidateName} uchun barcha ovozlarni o'chirmoqchimisiz?`,
+      'Ovozlarni Bekor Qilish',
+      'Ha, o\'chirish',
+      'Bekor qilish'
+    );
+
+    if (!result.isConfirmed) return;
+
+    try {
+      showLoading('Ovozlar o\'chirilmoqda...');
+      const response = await api.delete(`/event-management/${id}/candidate/${candidateId}/votes`);
+      closeAlert();
+      showSuccess(`${response.data.deleted_count} ta ovoz o'chirildi`);
+    } catch (error: any) {
+      closeAlert();
+      showError(error.response?.data?.detail || 'Ovozlarni o\'chirishda xatolik');
+    }
+  };
+
+  const clearGroupVotes = async (groupName: string) => {
+    const result = await showConfirm(
+      `"${groupName}" guruhidagi barcha kandidatlar uchun ovozlarni o'chirmoqchimisiz?`,
+      'Guruh Ovozlarini Bekor Qilish',
+      'Ha, o\'chirish',
+      'Bekor qilish'
+    );
+
+    if (!result.isConfirmed) return;
+
+    try {
+      showLoading('Guruh ovozlari o\'chirilmoqda...');
+      const response = await api.delete(`/event-management/${id}/group/${encodeURIComponent(groupName)}/votes`);
+      closeAlert();
+      showSuccess(`${response.data.deleted_count} ta ovoz o'chirildi (${response.data.candidates_affected} kandidat)`);
+    } catch (error: any) {
+      closeAlert();
+      showError(error.response?.data?.detail || 'Guruh ovozlarini o\'chirishda xatolik');
+    }
+  };
+
+  const goToCandidate = async (candidateIndex: number, candidateName: string) => {
+    const result = await showConfirm(
+      `"${candidateName}" ga o'tmoqchimisiz?`,
+      'Kandidatga O\'tish',
+      'Ha, o\'tish',
+      'Bekor qilish'
+    );
+
+    if (!result.isConfirmed) return;
+
+    try {
+      showLoading('O\'tilmoqda...');
+      await api.post(`/event-management/${id}/set-current-candidate/${candidateIndex}`);
+      await fetchEventDetails();
+      await fetchCurrentCandidate();
+      closeAlert();
+      showSuccess('Muvaffaqiyatli o\'tildi!');
+    } catch (error: any) {
+      closeAlert();
+      showError(error.response?.data?.detail || 'Kandidatga o\'tishda xatolik');
+    }
+  };
+
 
   const viewResults = async () => {
     try {
@@ -396,7 +462,8 @@ export default function EventManage() {
     try {
       showLoading('Keyingi kandidatga o\'tilmoqda...');
       await api.post(`/event-management/${id}/next-candidate`);
-      fetchCurrentCandidate();
+      await fetchEventDetails();  // Refresh to get updated candidate statuses
+      await fetchCurrentCandidate();
       closeAlert();
       showToast('Keyingi kandidatga o\'tildi!', 'success');
     } catch (error: any) {
@@ -738,10 +805,18 @@ export default function EventManage() {
                       <p className="text-xs text-gray-500">{ec.candidate.description}</p>
                     )}
                     {ec.candidate_group && (
-                      <div className="flex items-center gap-1 mt-1">
+                      <div className="flex items-center gap-2 mt-1">
                         <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-semibold">
                           🔗 Group: {ec.candidate_group}
                         </span>
+                        <button
+                          onClick={() => clearGroupVotes(ec.candidate_group!)}
+                          className="bg-red-100 text-red-700 hover:bg-red-200 px-2 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1"
+                          title="Guruh ovozlarini tozalash"
+                        >
+                          <span>🗑️</span>
+                          <span>Guruh ovozlarini tozalash</span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -766,12 +841,32 @@ export default function EventManage() {
                   </div>
 
                   <div className="flex flex-col gap-2 items-end">
-                    <button
-                      onClick={() => openEditModal(ec.candidate)}
-                      className="px-3 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
-                    >
-                      Tahrirlash
-                    </button>
+                    <div className="flex gap-2">
+                      {/* Go to Candidate Button - only show if event is active and not current */}
+                      {event.status === EventStatus.ACTIVE && currentCandidate && currentCandidate.event_candidate_id !== ec.id && (
+                        <button
+                          onClick={() => goToCandidate(index, ec.candidate.full_name)}
+                          className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm transition-all"
+                          title="Bu kandidatga o'tish"
+                        >
+                          ➡️
+                        </button>
+                      )}
+                      <button
+                        onClick={() => openEditModal(ec.candidate)}
+                        className="px-3 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm transition-all"
+                        title="Tahrirlash"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => clearCandidateVotes(ec.candidate.id, ec.candidate.full_name)}
+                        className="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm transition-all"
+                        title="Ovozlarni tozalash"
+                      >
+                        🗑️
+                      </button>
+                    </div>
 
                     {/* Action Buttons */}
                     {event.status === EventStatus.PENDING && (

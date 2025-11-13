@@ -11,9 +11,26 @@ services:
       - ./api/.env:/app/.env:ro
     environment:
       - DATABASE_URL=sqlite:///./data/voting.db
+      - WEB_CONCURRENCY=6
+      - MAX_WORKERS=6
+      - WORKER_CLASS=uvicorn.workers.UvicornWorker
+      - WORKER_CONNECTIONS=350
+      - KEEPALIVE=120
     env_file:
       - ./api/.env
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     networks:
       - voting-network
     healthcheck:

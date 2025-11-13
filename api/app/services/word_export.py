@@ -105,21 +105,22 @@ def generate_results_word(event_name: str, results: List[dict], total_participan
         # Nomzodlar (candidate name)
         cells[2].text = result.get('full_name', '')
 
-        # Ovoz berishda qatnashganlar soni (total participants)
-        cells[3].text = str(total_participants)
+        # Ovoz berishda qatnashganlar soni (yes + no + neutral for this candidate)
+        yes_votes = result.get('yes_votes', 0)
+        no_votes = result.get('no_votes', 0)
+        neutral_votes = result.get('neutral_votes', 0)
+        candidate_participants = yes_votes + no_votes + neutral_votes
+        cells[3].text = str(candidate_participants)
 
         # Rozi (yes votes with percentage)
-        yes_votes = result.get('yes_votes', 0)
         yes_percent = result.get('yes_percent', 0)
         cells[4].text = f"{yes_votes}\n({yes_percent}%)"
 
         # Qarshi (no votes with percentage)
-        no_votes = result.get('no_votes', 0)
         no_percent = result.get('no_percent', 0)
         cells[5].text = f"{no_votes}\n({no_percent}%)"
 
         # Betaraf (neutral votes with percentage)
-        neutral_votes = result.get('neutral_votes', 0)
         neutral_percent = result.get('neutral_percent', 0)
         cells[6].text = f"{neutral_votes}\n({neutral_percent}%)"
 

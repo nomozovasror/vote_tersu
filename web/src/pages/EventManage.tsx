@@ -43,7 +43,6 @@ export default function EventManage() {
   const [groupName, setGroupName] = useState('');
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [results, setResults] = useState<any[]>([]);
-  const [totalParticipants, setTotalParticipants] = useState(0);
   const [showEditEventModal, setShowEditEventModal] = useState(false);
   const [editEventName, setEditEventName] = useState('');
   const navigate = useNavigate();
@@ -382,7 +381,6 @@ export default function EventManage() {
       showLoading('Natijalar yuklanmoqda...');
       const response = await api.get(`/events/${id}/results`);
       setResults(response.data.results || []);
-      setTotalParticipants(response.data.total_votes || 0);
       closeAlert();
       setShowResultsModal(true);
     } catch (error: any) {
@@ -809,14 +807,17 @@ export default function EventManage() {
                         <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-semibold">
                           🔗 Group: {ec.candidate_group}
                         </span>
-                        <button
-                          onClick={() => clearGroupVotes(ec.candidate_group!)}
-                          className="bg-red-100 text-red-700 hover:bg-red-200 px-2 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1"
-                          title="Guruh ovozlarini tozalash"
-                        >
-                          <span>🗑️</span>
-                          <span>Guruh ovozlarini tozalash</span>
-                        </button>
+                        {/* Clear group votes button - only show if event is not finished or archived */}
+                        {event.status !== EventStatus.FINISHED && event.status !== EventStatus.ARCHIVED && (
+                          <button
+                            onClick={() => clearGroupVotes(ec.candidate_group!)}
+                            className="bg-red-100 text-red-700 hover:bg-red-200 px-2 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1"
+                            title="Guruh ovozlarini tozalash"
+                          >
+                            <span>🗑️</span>
+                            <span>Guruh ovozlarini tozalash</span>
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -852,20 +853,26 @@ export default function EventManage() {
                           ➡️
                         </button>
                       )}
-                      <button
-                        onClick={() => openEditModal(ec.candidate)}
-                        className="px-3 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm transition-all"
-                        title="Tahrirlash"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        onClick={() => clearCandidateVotes(ec.candidate.id, ec.candidate.full_name)}
-                        className="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm transition-all"
-                        title="Ovozlarni tozalash"
-                      >
-                        🗑️
-                      </button>
+                      {/* Edit button - only show if event is not finished or archived */}
+                      {event.status !== EventStatus.FINISHED && event.status !== EventStatus.ARCHIVED && (
+                        <button
+                          onClick={() => openEditModal(ec.candidate)}
+                          className="px-3 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 text-sm transition-all"
+                          title="Tahrirlash"
+                        >
+                          ✏️
+                        </button>
+                      )}
+                      {/* Clear votes button - only show if event is not finished or archived */}
+                      {event.status !== EventStatus.FINISHED && event.status !== EventStatus.ARCHIVED && (
+                        <button
+                          onClick={() => clearCandidateVotes(ec.candidate.id, ec.candidate.full_name)}
+                          className="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-sm transition-all"
+                          title="Ovozlarni tozalash"
+                        >
+                          🗑️
+                        </button>
+                      )}
                     </div>
 
                     {/* Action Buttons */}
@@ -1197,37 +1204,42 @@ export default function EventManage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {results.map((result) => (
-                      <tr key={result.candidate_id} className="hover:bg-gray-50">
-                        <td className="border border-gray-300 px-4 py-2 text-center">{result.row_number}</td>
-                        <td className="border border-gray-300 px-4 py-2">{result.which_position || '-'}</td>
-                        <td className="border border-gray-300 px-4 py-2">
-                          <div className="flex items-center gap-3">
-                            {result.image && (
-                              <img
-                                src={result.image}
-                                alt={result.full_name}
-                                className="w-12 h-12 rounded-full object-cover border-2 border-gray-300"
-                              />
-                            )}
-                            <span>{result.full_name}</span>
-                          </div>
-                        </td>
-                        <td className="border border-gray-300 px-4 py-2 text-center">{totalParticipants}</td>
-                        <td className="border border-gray-300 px-4 py-2 text-center">
-                          {result.yes_votes}<br />({result.yes_percent}%)
-                        </td>
-                        <td className="border border-gray-300 px-4 py-2 text-center">
-                          {result.no_votes}<br />({result.no_percent}%)
-                        </td>
-                        <td className="border border-gray-300 px-4 py-2 text-center">
-                          {result.neutral_votes}<br />({result.neutral_percent}%)
-                        </td>
-                        <td className="border border-gray-300 px-4 py-2 text-center font-semibold">
-                          {result.result}
-                        </td>
-                      </tr>
-                    ))}
+                    {results.map((result) => {
+                      // Calculate participants for this candidate (yes + no + neutral)
+                      const candidateParticipants = (result.yes_votes || 0) + (result.no_votes || 0) + (result.neutral_votes || 0);
+
+                      return (
+                        <tr key={result.candidate_id} className="hover:bg-gray-50">
+                          <td className="border border-gray-300 px-4 py-2 text-center">{result.row_number}</td>
+                          <td className="border border-gray-300 px-4 py-2">{result.which_position || '-'}</td>
+                          <td className="border border-gray-300 px-4 py-2">
+                            <div className="flex items-center gap-3">
+                              {result.image && (
+                                <img
+                                  src={result.image}
+                                  alt={result.full_name}
+                                  className="w-12 h-12 rounded-full object-cover border-2 border-gray-300"
+                                />
+                              )}
+                              <span>{result.full_name}</span>
+                            </div>
+                          </td>
+                          <td className="border border-gray-300 px-4 py-2 text-center">{candidateParticipants}</td>
+                          <td className="border border-gray-300 px-4 py-2 text-center">
+                            {result.yes_votes}<br />({result.yes_percent}%)
+                          </td>
+                          <td className="border border-gray-300 px-4 py-2 text-center">
+                            {result.no_votes}<br />({result.no_percent}%)
+                          </td>
+                          <td className="border border-gray-300 px-4 py-2 text-center">
+                            {result.neutral_votes}<br />({result.neutral_percent}%)
+                          </td>
+                          <td className="border border-gray-300 px-4 py-2 text-center font-semibold">
+                            {result.result}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

@@ -21,14 +21,6 @@ services:
     env_file:
       - ./api/.env
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: 4G
-        reservations:
-          cpus: '2'
-          memory: 2G
     ulimits:
       nofile:
         soft: 65536

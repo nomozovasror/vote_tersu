@@ -26,6 +26,16 @@ export default function VotePage() {
   const [totalVotes, setTotalVotes] = useState(0);
   const resultsFetched = useRef(false);
 
+  // WebSocket connection management
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'reconnecting'>('connecting');
+  const reconnectAttempts = useRef(0);
+  const maxReconnectAttempts = 50; // Allow many reconnects for long voting sessions
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastPongRef = useRef<number>(Date.now());
+  const isPageVisibleRef = useRef(true);
+  const shouldReconnectRef = useRef(true);
+
   const formatDateTime = (value?: string | null) => {
     if (!value) return '';
     return value;
@@ -37,13 +47,53 @@ export default function VotePage() {
     setResultsError('');
     resultsFetched.current = false;
     previousCandidateId.current = null;
+    shouldReconnectRef.current = true;
+    reconnectAttempts.current = 0;
     fetchEvent();
     connectWebSocket();
 
+    // Page visibility handler for Telegram in-app browser
+    const handleVisibilityChange = () => {
+      isPageVisibleRef.current = !document.hidden;
+      if (!document.hidden && wsRef.current?.readyState !== WebSocket.OPEN) {
+        console.log('Page became visible, reconnecting WebSocket...');
+        reconnectAttempts.current = 0; // Reset on visibility change
+        connectWebSocket();
+      }
+    };
+
+    // Network status handler
+    const handleOnline = () => {
+      console.log('Network online, reconnecting WebSocket...');
+      reconnectAttempts.current = 0;
+      if (wsRef.current?.readyState !== WebSocket.OPEN) {
+        connectWebSocket();
+      }
+    };
+
+    const handleOffline = () => {
+      console.log('Network offline');
+      setConnectionStatus('disconnected');
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     return () => {
+      shouldReconnectRef.current = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+      }
       if (wsRef.current) {
         wsRef.current.close();
       }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
   }, [link]);
 
@@ -162,14 +212,84 @@ export default function VotePage() {
   };
 
   const connectWebSocket = () => {
+    // Don't connect if we shouldn't reconnect
+    if (!shouldReconnectRef.current) {
+      return;
+    }
+
+    // Clear existing connection
+    if (wsRef.current) {
+      wsRef.current.onclose = null;
+      wsRef.current.onerror = null;
+      wsRef.current.onmessage = null;
+      wsRef.current.onopen = null;
+      if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
+        wsRef.current.close();
+      }
+    }
+
+    // Clear heartbeat interval
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+
+    setConnectionStatus(reconnectAttempts.current > 0 ? 'reconnecting' : 'connecting');
+
     const ws = new WebSocket(`${WS_BASE_URL}/ws/vote/${link}`);
 
+    // Set timeout for connection
+    const connectionTimeout = setTimeout(() => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        console.log('WebSocket connection timeout');
+        ws.close();
+      }
+    }, 10000); // 10 second timeout
+
     ws.onopen = () => {
+      clearTimeout(connectionTimeout);
       console.log('WebSocket ulandi');
+      setConnectionStatus('connected');
+      reconnectAttempts.current = 0;
+      lastPongRef.current = Date.now();
+
+      // Start heartbeat - send ping every 25 seconds (before typical 30s timeout)
+      heartbeatIntervalRef.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          // Check if we received pong recently (within 60 seconds)
+          const timeSinceLastPong = Date.now() - lastPongRef.current;
+          if (timeSinceLastPong > 60000) {
+            console.log('No pong received for 60s, reconnecting...');
+            ws.close();
+            return;
+          }
+
+          // Send ping
+          try {
+            ws.send(JSON.stringify({ type: 'ping' }));
+          } catch (err) {
+            console.error('Failed to send ping:', err);
+          }
+        }
+      }, 25000);
     };
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch (err) {
+        console.error('Failed to parse WebSocket message:', err);
+        return;
+      }
+
+      // Update last pong time for any message (server is alive)
+      lastPongRef.current = Date.now();
+
+      if (data.type === 'pong') {
+        // Heartbeat response, already updated lastPongRef
+        return;
+      }
 
       if (data.type === 'current_candidate') {
         const newCandidate = data.data as CurrentCandidate | null;
@@ -250,22 +370,51 @@ export default function VotePage() {
           nonce.current = generateUUID();
         }
       } else if (data.type === 'error') {
-        alert(data.message);
+        // Don't use alert, show inline error instead for better UX
+        console.error('Vote error:', data.message);
       }
     };
 
     ws.onerror = (error) => {
+      clearTimeout(connectionTimeout);
       console.error('WebSocket xato:', error);
+      setConnectionStatus('disconnected');
     };
 
-    ws.onclose = () => {
-      console.log('WebSocket yopildi');
-      // Reconnect after 3 seconds
-      setTimeout(() => {
-        if (wsRef.current?.readyState === WebSocket.CLOSED) {
-          connectWebSocket();
-        }
-      }, 3000);
+    ws.onclose = (event) => {
+      clearTimeout(connectionTimeout);
+      console.log('WebSocket yopildi, code:', event.code, 'reason:', event.reason);
+      setConnectionStatus('disconnected');
+
+      // Clear heartbeat
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+
+      // Don't reconnect if intentionally closed or max attempts reached
+      if (!shouldReconnectRef.current) {
+        return;
+      }
+
+      if (reconnectAttempts.current >= maxReconnectAttempts) {
+        console.log('Max reconnect attempts reached');
+        setError('Aloqa uzildi. Sahifani yangilang.');
+        return;
+      }
+
+      // Exponential backoff with jitter: 1s, 2s, 4s, 8s... max 30s
+      const baseDelay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
+      const jitter = Math.random() * 1000; // Add 0-1s random jitter
+      const delay = baseDelay + jitter;
+
+      console.log(`Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempts.current + 1}/${maxReconnectAttempts})`);
+      setConnectionStatus('reconnecting');
+
+      reconnectTimeoutRef.current = setTimeout(() => {
+        reconnectAttempts.current++;
+        connectWebSocket();
+      }, delay);
     };
 
     wsRef.current = ws;
@@ -282,16 +431,76 @@ export default function VotePage() {
     const candidateIdToVote = targetCandidateId || currentCandidate.candidate.id;
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'cast_vote',
-        vote_type: voteType,
-        candidate_id: candidateIdToVote,
-        nonce: nonce.current,
-        device_id: deviceId.current
-      }));
+      try {
+        wsRef.current.send(JSON.stringify({
+          type: 'cast_vote',
+          vote_type: voteType,
+          candidate_id: candidateIdToVote,
+          nonce: nonce.current,
+          device_id: deviceId.current
+        }));
+      } catch (err) {
+        console.error('Failed to send vote:', err);
+        alert('Ovoz yuborishda xatolik. Qayta urinib ko\'ring.');
+      }
     } else {
-      alert('Aloqa uzildi, sahifani yangilang');
+      alert('Aloqa uzildi. Sahifa avtomatik qayta ulanmoqda...');
+      // Trigger reconnection
+      if (wsRef.current?.readyState === WebSocket.CLOSED) {
+        reconnectAttempts.current = 0;
+        connectWebSocket();
+      }
     }
+  };
+
+  // Connection status indicator component
+  const ConnectionStatusIndicator = () => {
+    if (connectionStatus === 'connected') {
+      return null; // Don't show anything when connected
+    }
+
+    const statusConfig = {
+      connecting: {
+        bg: 'bg-yellow-500',
+        text: 'Ulanmoqda...',
+        icon: '🔄',
+        animate: true
+      },
+      reconnecting: {
+        bg: 'bg-orange-500',
+        text: `Qayta ulanmoqda... (${reconnectAttempts.current}/${maxReconnectAttempts})`,
+        icon: '🔄',
+        animate: true
+      },
+      disconnected: {
+        bg: 'bg-red-500',
+        text: 'Aloqa uzildi',
+        icon: '❌',
+        animate: false
+      }
+    };
+
+    const config = statusConfig[connectionStatus];
+
+    return (
+      <div className={`fixed top-0 left-0 right-0 ${config.bg} text-white py-3 px-4 z-50 shadow-lg`}>
+        <div className="max-w-2xl mx-auto flex items-center justify-center gap-2">
+          <span className={config.animate ? 'animate-spin' : ''}>{config.icon}</span>
+          <span className="font-medium">{config.text}</span>
+          {connectionStatus === 'disconnected' && (
+            <button
+              onClick={() => {
+                reconnectAttempts.current = 0;
+                connectWebSocket();
+              }}
+              className="ml-2 bg-white text-red-600 px-3 py-1 rounded text-sm font-semibold hover:bg-red-100 transition-colors"
+            >
+              Qayta ulanish
+            </button>
+          )}
+        </div>
+      </div>
+    );
   };
 
   const retryFetchResults = () => {
@@ -303,6 +512,7 @@ export default function VotePage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
+        <ConnectionStatusIndicator />
         <div className="text-xl">Yuklanmoqda...</div>
       </div>
     );
@@ -311,6 +521,7 @@ export default function VotePage() {
   if (error || !event) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
+        <ConnectionStatusIndicator />
         <div className="text-xl text-red-600">{error || 'Event topilmadi'}</div>
       </div>
     );
@@ -319,6 +530,7 @@ export default function VotePage() {
   if (event.status === EventStatus.PENDING) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 px-4">
+        <ConnectionStatusIndicator />
         <div className="text-center">
           <div className="text-2xl md:text-3xl font-bold text-yellow-600 mb-4">
             Bu tanlov hozir faol emas
@@ -433,6 +645,7 @@ export default function VotePage() {
   if (hasCandidate && !timerStarted) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 px-4">
+        <ConnectionStatusIndicator />
         <div className="text-center bg-white rounded-2xl shadow-2xl p-12 max-w-md">
           <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
             <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -452,6 +665,7 @@ export default function VotePage() {
     if (shouldShowFinalResults) {
       return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 py-4 md:py-8 px-4">
+          <ConnectionStatusIndicator />
           <div className="max-w-2xl mx-auto">
             <div className="bg-white rounded-xl shadow-xl p-4 md:p-6 mb-4 md:mb-6 text-center">
               <h1 className="text-xl md:text-3xl font-bold mb-2">{event.name}</h1>
@@ -464,6 +678,7 @@ export default function VotePage() {
 
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 px-4">
+        <ConnectionStatusIndicator />
         <div className="text-center">
           <div className="text-2xl md:text-3xl font-bold mb-4">Ovoz berish kutilmoqda...</div>
           <p className="text-gray-600">Admin tomonidan kandidat tanlanishini kuting</p>
@@ -484,6 +699,7 @@ export default function VotePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 py-4 md:py-8 px-4">
+      <ConnectionStatusIndicator />
       <div className="max-w-2xl mx-auto">
         {/* Event Info */}
         <div className="bg-white rounded-xl shadow-xl p-4 md:p-6 mb-4 md:mb-6">

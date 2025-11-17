@@ -196,6 +196,7 @@ def build_display_update_payload(db: Session, event: Event):
 async def websocket_vote_endpoint(websocket: WebSocket, link: str):
     """WebSocket for sequential yes/no/neutral voting"""
     db = next(get_db())
+    connected = False
 
     try:
         db.expire_all()
@@ -212,6 +213,7 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
             return
 
         await manager.connect_vote(websocket, link)
+        connected = True
 
         # Send current candidate info
         db.expire_all()
@@ -230,7 +232,17 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
             })
 
         while True:
-            data = await websocket.receive_json()
+            try:
+                data = await websocket.receive_json()
+            except Exception as e:
+                # JSON parsing error or connection closed
+                print(f"Error receiving message: {e}")
+                break
+
+            # Handle ping-pong for connection health
+            if data.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
 
             if data.get("type") == "cast_vote":
                 db.expire_all()
@@ -487,12 +499,17 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
                     await manager.broadcast_display(link, display_payload)
 
     except WebSocketDisconnect:
-        manager.disconnect_vote(websocket, link)
+        if connected:
+            manager.disconnect_vote(websocket, link)
     except Exception as e:
-        print(f"WebSocket error: {e}")
-        manager.disconnect_vote(websocket, link)
+        print(f"WebSocket error: {type(e).__name__}: {e}")
+        if connected:
+            manager.disconnect_vote(websocket, link)
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception as e:
+            print(f"Error closing database session: {e}")
 
 
 @router.websocket("/ws/display/{link}")

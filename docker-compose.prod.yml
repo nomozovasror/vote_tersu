@@ -5,17 +5,19 @@ services:
       dockerfile: Dockerfile
     container_name: voting_api
     ports:
-      - "2014:8000"
+      - "${API_PORT:-2014}:8000"
     volumes:
       - ./data:/app/data
       - ./api/.env:/app/.env:ro
     environment:
       - DATABASE_URL=sqlite:///./data/voting.db
-      - WEB_CONCURRENCY=6
-      - MAX_WORKERS=6
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-6}
+      - MAX_WORKERS=${WEB_CONCURRENCY:-6}
       - WORKER_CLASS=uvicorn.workers.UvicornWorker
       - WORKER_CONNECTIONS=350
       - KEEPALIVE=120
+      - MAX_CONNECTIONS_PER_EVENT=${MAX_CONNECTIONS_PER_EVENT:-500}
+      - MAX_TOTAL_CONNECTIONS=${MAX_TOTAL_CONNECTIONS:-2000}
     env_file:
       - ./api/.env
     restart: unless-stopped
@@ -49,9 +51,13 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:2014}
+        - VITE_UNIVERSITY_NAME=${UNIVERSITY_NAME:-University}
+        - VITE_UNIVERSITY_SHORT_NAME=${UNIVERSITY_SHORT_NAME:-UNI}
     container_name: voting_web
     ports:
-      - "2013:80"
+      - "${WEB_PORT:-2013}:80"
     depends_on:
       api:
         condition: service_healthy

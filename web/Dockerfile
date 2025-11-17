@@ -3,6 +3,16 @@ FROM node:18-alpine as build
 
 WORKDIR /app
 
+# Build arguments for environment variables
+ARG VITE_API_URL=http://localhost:2014
+ARG VITE_UNIVERSITY_NAME=University
+ARG VITE_UNIVERSITY_SHORT_NAME=UNI
+
+# Set environment variables for build
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_UNIVERSITY_NAME=$VITE_UNIVERSITY_NAME
+ENV VITE_UNIVERSITY_SHORT_NAME=$VITE_UNIVERSITY_SHORT_NAME
+
 COPY package*.json ./
 RUN npm install
 

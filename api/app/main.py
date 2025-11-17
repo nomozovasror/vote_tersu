@@ -57,6 +57,8 @@ def root():
     return {
         "message": "Real-Time Voting System API",
         "version": "1.0.0",
+        "university": settings.UNIVERSITY_NAME,
+        "university_short": settings.UNIVERSITY_SHORT_NAME,
         "docs": "/docs"
     }
 
@@ -64,6 +66,24 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+
+@app.get("/info")
+def system_info():
+    """Get system and university information."""
+    return {
+        "university_name": settings.UNIVERSITY_NAME,
+        "university_short_name": settings.UNIVERSITY_SHORT_NAME,
+        "api_version": "1.0.0",
+        "hemis_api_url": settings.EXTERNAL_API_URL,
+    }
+
+
+@app.get("/ws-stats")
+def websocket_stats():
+    """Get WebSocket connection statistics for monitoring."""
+    from .services.websocket_manager import manager
+    return manager.get_connection_stats()
 
 
 # Serve frontend static files (for production)

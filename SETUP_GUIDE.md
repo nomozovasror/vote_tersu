@@ -154,29 +154,42 @@ sudo firewall-cmd --reload
 
 ## Performance sozlamalari
 
-200+ foydalanuvchi uchun:
+⚠️ **MUHIM: WebSocket Worker sozlamalari**
+
+Tizim in-memory WebSocket broadcast ishlatadi va **bitta worker talab qiladi**:
 
 ```env
-# .env faylida
-WEB_CONCURRENCY=6              # Worker soni (2 * CPU cores)
+# .env faylida - MAJBURIY!
+WEB_CONCURRENCY=1              # WebSocket uchun FAQAT 1 worker
 MAX_CONNECTIONS_PER_EVENT=500  # Har bir event uchun max ulanishlar
-MAX_TOTAL_CONNECTIONS=2000     # Jami max ulanishlar
+MAX_TOTAL_CONNECTIONS=2000     # Bitta worker 2000 ta ulanish
 ```
 
-500+ foydalanuvchi uchun:
-```env
-WEB_CONCURRENCY=8
-MAX_CONNECTIONS_PER_EVENT=1000
-MAX_TOTAL_CONNECTIONS=5000
-```
+**Nima uchun bitta worker?**
 
-Docker resource limits'ni ham oshiring (`docker-compose.prod.yml`):
+Multi-worker rejimida har bir worker o'z `ConnectionManager` instance'iga ega. Agar timer start worker #1 da bajarilsa, faqat worker #1 dagi ulanishlar yangilanadi. Worker #2, #3 da ulanganlar yangilanish olmaydi.
+
+**Alternativ yechim (kelajakda):**
+
+500+ foydalanuvchi yoki multi-worker kerak bo'lsa:
+- Redis pub/sub ishlatish
+- PostgreSQL LISTEN/NOTIFY ishlatish
+- Sticky sessions sozlash
+
+**Hozirgi imkoniyatlar:**
+
+Bitta worker bilan:
+- ✅ 200+ foydalanuvchi - Ishlaydi
+- ✅ 500 ta concurrent WebSocket - Ishlaydi
+- ✅ 2000 ta concurrent ulanish - Ishlaydi
+
+Docker resource limits'ni oshiring (`docker-compose.prod.yml`):
 ```yaml
 deploy:
   resources:
     limits:
-      cpus: '8'
-      memory: 8G
+      cpus: '4'
+      memory: 4G
 ```
 
 ---
@@ -219,11 +232,30 @@ docker stats voting_api voting_web
 
 ## Muammolarni hal qilish
 
+### Timer start yoki candidate o'zgarishi yangilanmayapti
+
+**Sabab:** Multi-worker rejimida ishlayapti
+
+**Hal qilish:**
+```bash
+# .env faylini tekshiring
+cat .env | grep WEB_CONCURRENCY
+
+# Agar 1 dan katta bo'lsa:
+# .env ni tahrirlang
+WEB_CONCURRENCY=1
+
+# Qayta ishga tushiring
+docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.prod.yml up --build -d
+```
+
 ### WebSocket uzilishlari
 
 1. Firewall'ni tekshiring
 2. Reverse proxy timeout'larni oshiring (agar ishlatilsa)
 3. Connection limits'ni tekshiring
+4. Browser console'da WebSocket xatolarini tekshiring
 
 ### HEMIS API xatosi
 

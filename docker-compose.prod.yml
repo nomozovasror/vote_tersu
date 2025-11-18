@@ -11,10 +11,12 @@ services:
       - ./api/.env:/app/.env:ro
     environment:
       - DATABASE_URL=sqlite:///./data/voting.db
-      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-6}
-      - MAX_WORKERS=${WEB_CONCURRENCY:-6}
+      # NOTE: WebSocket requires single worker for in-memory broadcast
+      # Multi-worker requires Redis pub/sub or sticky sessions
+      - WEB_CONCURRENCY=1
+      - MAX_WORKERS=1
       - WORKER_CLASS=uvicorn.workers.UvicornWorker
-      - WORKER_CONNECTIONS=350
+      - WORKER_CONNECTIONS=2000
       - KEEPALIVE=120
       - MAX_CONNECTIONS_PER_EVENT=${MAX_CONNECTIONS_PER_EVENT:-500}
       - MAX_TOTAL_CONNECTIONS=${MAX_TOTAL_CONNECTIONS:-2000}

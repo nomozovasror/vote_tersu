@@ -2,6 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install system dependencies for building Python packages
+RUN apt-get update && apt-get install -y \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -28,8 +34,9 @@ CMD python -m app.init_db && \
     --host 0.0.0.0 \
     --port 8000 \
     --workers 1 \
+    --loop uvloop \
     --timeout-keep-alive 120 \
-    --limit-concurrency 2000 \
-    --backlog 2048 \
+    --limit-concurrency 5000 \
+    --backlog 4096 \
     --ws-ping-interval 20 \
     --ws-ping-timeout 30

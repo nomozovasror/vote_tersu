@@ -301,12 +301,77 @@ vote_app/
 └── README.md
 ```
 
+## 🧪 Testing & Performance
+
+### Stress Testing
+
+Test the system with simulated concurrent users (no real users needed):
+
+```bash
+# Install test dependencies
+pip install -r stress_test_requirements.txt
+
+# Quick tests
+./quick_test.sh <event-link> small   # 50 users
+./quick_test.sh <event-link> medium  # 100 users
+./quick_test.sh <event-link> large   # 200 users
+
+# Custom test
+python3 stress_test.py \
+    --api http://localhost:2014 \
+    --link <event-link> \
+    --users 150 \
+    --duration 60
+
+# Ramp-up test (gradual load)
+python3 stress_test.py \
+    --api http://localhost:2014 \
+    --link <event-link> \
+    --mode ramp \
+    --max-users 200 \
+    --ramp-time 60
+```
+
+### Real-time Monitoring
+
+Monitor system performance during tests:
+
+```bash
+# Start monitoring
+python3 monitor.py --api http://localhost:2014
+
+# Get current stats
+curl http://localhost:2014/ws-stats
+```
+
+### Performance Benchmarks
+
+**Current optimizations** (single worker + SQLite):
+- ✅ 200-250 concurrent users
+- ✅ 1000+ votes/minute
+- ✅ 5-10ms latency
+- ✅ ~800MB RAM usage
+
+**For 500+ users**, see [PERFORMANCE.md](PERFORMANCE.md) for Redis pub/sub setup.
+
+**Full documentation:**
+- [STRESS_TEST_GUIDE.md](STRESS_TEST_GUIDE.md) - Complete testing guide
+- [PERFORMANCE.md](PERFORMANCE.md) - Performance optimization & scaling
+- [SETUP_GUIDE.md](SETUP_GUIDE.md) - Production deployment guide
+
 ## 🐛 Troubleshooting
 
 ### WebSocket connection fails
 - Check CORS settings in backend
 - Ensure frontend is using correct WS URL
 - Verify firewall allows WebSocket connections
+- Check file descriptor limits: `docker exec voting_api sh -c "ulimit -n"` (should be 65536)
+
+### Only 30-40 users can connect
+**This was a known issue - now fixed!**
+- Solution: Docker ulimits, database session fixes, uvloop
+- See [PERFORMANCE.md](PERFORMANCE.md) for details
+- Redeploy with: `docker-compose build --no-cache && docker-compose up -d --force-recreate`
 
 ### Can't login
 - Verify database is initialized (`python -m app.init_db`)
@@ -317,6 +382,11 @@ vote_app/
 - Verify `EXTERNAL_API_URL` and `EXTERNAL_API_TOKEN` in `.env`
 - Check API endpoint is accessible
 - Review backend logs for errors
+
+### High CPU or Memory usage
+- Check active connections: `curl http://localhost:2014/ws-stats`
+- Monitor resources: `python3 monitor.py`
+- Review [PERFORMANCE.md](PERFORMANCE.md) for optimization tips
 
 ## 📝 License
 

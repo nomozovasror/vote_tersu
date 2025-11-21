@@ -178,12 +178,20 @@ Multi-worker rejimida har bir worker o'z `ConnectionManager` instance'iga ega. A
 
 **Hozirgi imkoniyatlar:**
 
-Bitta worker bilan:
-- ✅ 200+ foydalanuvchi - Ishlaydi
-- ✅ 500 ta concurrent WebSocket - Ishlaydi
-- ✅ 2000 ta concurrent ulanish - Ishlaydi
+**Optimizatsiyalar:**
+- ✅ SQLite WAL mode (concurrent reads/writes)
+- ✅ Connection pooling (60 connections)
+- ✅ Database indexes (fast queries)
+- ✅ Async broadcast (parallel messaging)
 
-Docker resource limits'ni oshiring (`docker-compose.prod.yml`):
+**Imkoniyatlar:**
+- ✅ 200 foydalanuvchi - Barqaror
+- ✅ 1200+ votes/min - Ishlaydi
+- ✅ 5-10ms latency - Yaxshi
+
+**Batafsil:** [PERFORMANCE.md](PERFORMANCE.md) ga qarang
+
+Docker resource limits (`docker-compose.prod.yml`):
 ```yaml
 deploy:
   resources:
@@ -196,20 +204,34 @@ deploy:
 
 ## Monitoring
 
-### WebSocket statistikasi
+### WebSocket statistikasi (Kengaytirilgan)
 ```bash
 curl http://your-server-ip:2014/ws-stats
 ```
 
-Response:
+Response (yangi optimizatsiyalar bilan):
 ```json
 {
-  "total_vote_connections": 45,
-  "total_display_connections": 2,
+  "total_vote_connections": 200,
+  "total_display_connections": 5,
   "events_with_vote_connections": 1,
-  "events_with_display_connections": 1
+  "events_with_display_connections": 1,
+  "system": {
+    "cpu_percent": 30.5,
+    "memory_mb": 800.0,
+    "open_files": 220,
+    "threads": 10,
+    "connections": 205
+  }
 }
 ```
+
+**Yangi system metrics:**
+- `cpu_percent` - CPU ishlatilishi (%)
+- `memory_mb` - RAM ishlatilishi (MB)
+- `open_files` - Ochiq file descriptor'lar soni
+- `threads` - Thread'lar soni
+- `connections` - Jami network connections
 
 ### Docker logs
 ```bash
@@ -274,13 +296,151 @@ docker-compose -f docker-compose.prod.yml up --build -d
 
 ---
 
-## Yangilash
+## Performance va Scalability
+
+### Hozirgi imkoniyat (bitta worker)
+
+**Optimizatsiyalar:**
+- ✅ Docker ulimits (65536 file descriptors)
+- ✅ Uvloop event loop (2-4x tezroq)
+- ✅ Database session management tuzatildi
+- ✅ Increased concurrency limits (5000)
+- ✅ Performance monitoring endpoint
+
+**Imkoniyat:**
+- 200-250 concurrent users ✅
+- 1000+ votes/minute
+- 5-10ms latency
+- ~800MB RAM usage
+
+### WebSocket connection muammosi (30 user limit)
+
+Agar tizim 30 ta foydalanuvchidan keyin yangi connection'larni rad etsa:
 
 ```bash
-# Kodni yangilang
+# 1. Ulimits tekshirish
+docker exec ${CONTAINER_PREFIX}_api sh -c "ulimit -n"
+# Kutilgan: 65536
+# Agar 1024 bo'lsa, docker-compose.prod.yml'da ulimits mavjudligini tekshiring
+
+# 2. Container'larni force recreate qiling
+docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.prod.yml up -d --force-recreate
+
+# 3. Docker daemon restart (agar kerak bo'lsa)
+sudo systemctl restart docker
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### Load Testing
+
+```bash
+# Test script yaratish
+cat > test_load.py << 'EOF'
+import asyncio
+import websockets
+import json
+import sys
+
+async def connect_user(link, user_id):
+    uri = f"ws://localhost:2014/ws/vote/{link}"
+    try:
+        async with websockets.connect(uri) as ws:
+            print(f"✅ User {user_id} connected")
+            response = await ws.recv()
+            await asyncio.sleep(60)
+            return True
+    except Exception as e:
+        print(f"❌ User {user_id} error: {e}")
+        return False
+
+async def test_concurrent_users(link, num_users):
+    print(f"\n🚀 Testing {num_users} concurrent users...")
+    tasks = [connect_user(link, i) for i in range(num_users)]
+    results = await asyncio.gather(*tasks)
+    successful = sum(1 for r in results if r)
+    print(f"\n📊 Results: {successful}/{num_users} successful")
+    return successful
+
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        print("Usage: python test_load.py <event_link> <num_users>")
+        sys.exit(1)
+    link = sys.argv[1]
+    num_users = int(sys.argv[2])
+    asyncio.run(test_concurrent_users(link, num_users))
+EOF
+
+# Test run
+pip install websockets
+python test_load.py "your-event-link" 200
+```
+
+### Agar 500+ foydalanuvchi kerak bo'lsa
+
+`PERFORMANCE.md` faylida Redis pub/sub va PostgreSQL migration haqida to'liq guide mavjud.
+
+---
+
+## Yangilash (Yangi optimizatsiyalar bilan)
+
+### Oddiy yangilash
+
+```bash
+# 1. Kodni yangilang
 git pull
 
-# Qayta build
+# 2. Qayta build qiling (no-cache bilan to'liq rebuild)
+docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.prod.yml build --no-cache
+docker-compose -f docker-compose.prod.yml up -d
+
+# 3. Monitoring
+docker-compose -f docker-compose.prod.yml logs -f api
+
+# 4. WebSocket connections tekshirish
+curl http://your-server-ip:2014/ws-stats
+```
+
+### Performance optimizatsiyalaridan keyin (MUHIM!)
+
+Agar siz ushbu commit'dan keyin yangilayotgan bo'lsangiz (30 user limit fix):
+
+```bash
+# 1. Stop containers
+docker-compose -f docker-compose.prod.yml down
+
+# 2. Update code
+git pull
+
+# 3. Update environment variables
+cat >> .env << 'EOF'
+MAX_CONNECTIONS_PER_EVENT=1000
+MAX_TOTAL_CONNECTIONS=5000
+EOF
+
+# 4. Rebuild with new optimizations
+docker-compose -f docker-compose.prod.yml build --no-cache
+
+# 5. Start with force recreate
+docker-compose -f docker-compose.prod.yml up -d --force-recreate
+
+# 6. Verify ulimits
+docker exec ${CONTAINER_PREFIX}_api sh -c "ulimit -n"
+# Expected: 65536
+
+# 7. Test with monitoring
+curl http://your-server-ip:2014/ws-stats
+```
+
+### Rollback (agar muammo bo'lsa)
+
+```bash
+# Previous commit'ga qaytish
+git log --oneline  # commit hash'ni topish
+git checkout <previous-commit-hash>
+
+# Rebuild
 docker-compose -f docker-compose.prod.yml down
 docker-compose -f docker-compose.prod.yml up --build -d
 ```

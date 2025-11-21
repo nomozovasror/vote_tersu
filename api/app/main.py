@@ -83,7 +83,25 @@ def system_info():
 def websocket_stats():
     """Get WebSocket connection statistics for monitoring."""
     from .services.websocket_manager import manager
-    return manager.get_connection_stats()
+    import psutil
+    import os
+
+    # Get process info
+    process = psutil.Process(os.getpid())
+
+    # Get connection stats
+    stats = manager.get_connection_stats()
+
+    # Add system resource info
+    stats["system"] = {
+        "cpu_percent": process.cpu_percent(interval=0.1),
+        "memory_mb": round(process.memory_info().rss / 1024 / 1024, 2),
+        "open_files": len(process.open_files()),
+        "threads": process.num_threads(),
+        "connections": len(process.connections()),
+    }
+
+    return stats
 
 
 # Serve frontend static files (for production)

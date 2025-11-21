@@ -4,6 +4,10 @@ services:
     container_name: voting_api
     ports:
       - "2014:8000"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     environment:
       - DATABASE_URL=sqlite:///./data/voting.db
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}

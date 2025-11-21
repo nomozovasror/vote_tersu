@@ -195,7 +195,8 @@ def build_display_update_payload(db: Session, event: Event):
 @router.websocket("/ws/vote/{link}")
 async def websocket_vote_endpoint(websocket: WebSocket, link: str):
     """WebSocket for sequential yes/no/neutral voting"""
-    db = next(get_db())
+    db_gen = get_db()
+    db = next(db_gen)
     connected = False
 
     try:
@@ -508,6 +509,11 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
     finally:
         try:
             db.close()
+            # Properly close the generator
+            try:
+                next(db_gen)
+            except StopIteration:
+                pass
         except Exception as e:
             print(f"Error closing database session: {e}")
 
@@ -515,7 +521,8 @@ async def websocket_vote_endpoint(websocket: WebSocket, link: str):
 @router.websocket("/ws/display/{link}")
 async def websocket_display_endpoint(websocket: WebSocket, link: str):
     """WebSocket for display screen with pie chart results"""
-    db = next(get_db())
+    db_gen = get_db()
+    db = next(db_gen)
 
     try:
         event = db.query(Event).filter(Event.link == link).first()
@@ -545,7 +552,15 @@ async def websocket_display_endpoint(websocket: WebSocket, link: str):
         print(f"Display WebSocket error: {e}")
         manager.disconnect_display(websocket, link)
     finally:
-        db.close()
+        try:
+            db.close()
+            # Properly close the generator
+            try:
+                next(db_gen)
+            except StopIteration:
+                pass
+        except Exception as e:
+            print(f"Error closing database session: {e}")
 
 
 async def send_display_update(websocket: WebSocket, db: Session, event_id: int):

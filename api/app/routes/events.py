@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
+from urllib.parse import quote
 import uuid
 from ..core.database import get_db
 from ..core.schemas import EventCreate, EventUpdate, EventResponse, EventWithCandidates
@@ -317,11 +318,12 @@ def download_event_results(
 
     # Create filename
     filename = f"{event.name.replace(' ', '_')}_natijalar.docx"
+    encoded_filename = quote(filename)
 
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
     )
 
 
@@ -348,11 +350,12 @@ def download_event_results_by_link(link: str, db: Session = Depends(get_db)):
 
     # Create filename
     filename = f"{event.name.replace(' ', '_')}_natijalar.docx"
+    encoded_filename = quote(filename)
 
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
     )
 
 

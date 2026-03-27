@@ -7,11 +7,9 @@ function getApiBaseUrl(): string {
     return import.meta.env.VITE_API_URL;
   }
 
-  // 2. In production, use same host but port 2014
+  // 2. In production, use the same host and port (proxied by Nginx)
   if (import.meta.env.PROD) {
-    const currentHost = window.location.hostname;
-    const currentProtocol = window.location.protocol;
-    return `${currentProtocol}//${currentHost}:2013`;
+    return window.location.origin;
   }
 
   // 3. Default for development

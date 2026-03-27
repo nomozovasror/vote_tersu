@@ -1,421 +1,665 @@
-#!/usr/bin/env python3
 """
-Voting System Stress Test Tool
-Tests WebSocket connections, voting load, and system performance
+Stress test for the voting system.
+
+Simulates real voting flow:
+1. Admin logs in and starts timer
+2. Users connect via WebSocket and vote
+3. Timer expires → admin moves to next candidate
+4. Repeat for all candidates
+
+Usage:
+    pip install websockets aiohttp
+
+    # 50 users, auto admin flow
+    python3 stress_test.py --url http://127.0.0.1:2012 --link 37694e2d --users 50
+
+    # 200 users
+    python3 stress_test.py --url http://127.0.0.1:2012 --link 37694e2d --users 200
+
+    # 500 users with custom timer
+    python3 stress_test.py --url http://127.0.0.1:2012 --link 37694e2d --users 500 --timer 30
+
+    # Only voters (admin manages manually)
+    python3 stress_test.py --url http://127.0.0.1:2012 --link 37694e2d --users 200 --no-admin
 """
 
 import asyncio
-import websockets
+import argparse
 import json
 import time
+import random
+import uuid
 import sys
-import argparse
-import statistics
-from datetime import datetime
-from typing import List, Dict
-import aiohttp
-from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Optional
 
-class Colors:
-    GREEN = '\033[92m'
-    RED = '\033[91m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    BOLD = '\033[1m'
-    END = '\033[0m'
+try:
+    import websockets
+except ImportError:
+    print("Install: pip install websockets")
+    sys.exit(1)
 
-class StressTestResult:
-    def __init__(self):
-        self.total_connections = 0
-        self.successful_connections = 0
-        self.failed_connections = 0
-        self.total_votes = 0
-        self.successful_votes = 0
-        self.failed_votes = 0
-        self.connection_times = []
-        self.vote_times = []
-        self.errors = defaultdict(int)
-        self.start_time = None
-        self.end_time = None
+try:
+    import aiohttp
+except ImportError:
+    print("Install: pip install aiohttp")
+    sys.exit(1)
 
-    def add_connection_success(self, duration: float):
-        self.total_connections += 1
-        self.successful_connections += 1
-        self.connection_times.append(duration)
 
-    def add_connection_failure(self, error: str):
-        self.total_connections += 1
-        self.failed_connections += 1
-        self.errors[error] += 1
+@dataclass
+class Stats:
+    total_users: int = 0
+    connected: int = 0
+    failed_connections: int = 0
+    messages_received: int = 0
+    votes_sent: int = 0
+    votes_confirmed: int = 0
+    votes_rejected: int = 0
+    duplicate_votes: int = 0
+    errors: int = 0
+    candidates_voted: int = 0
+    connect_times: list = field(default_factory=list)
+    vote_latencies: list = field(default_factory=list)
+    connection_errors: list = field(default_factory=list)
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
-    def add_vote_success(self, duration: float):
-        self.total_votes += 1
-        self.successful_votes += 1
-        self.vote_times.append(duration)
+    async def inc(self, attr: str, value: int = 1):
+        async with self._lock:
+            setattr(self, attr, getattr(self, attr) + value)
 
-    def add_vote_failure(self, error: str):
-        self.total_votes += 1
-        self.failed_votes += 1
-        self.errors[error] += 1
+    async def append_to(self, attr: str, value):
+        async with self._lock:
+            getattr(self, attr).append(value)
 
-    def print_summary(self):
-        duration = (self.end_time - self.start_time) if self.start_time and self.end_time else 0
+    def summary(self):
+        avg_connect = sum(self.connect_times) / len(self.connect_times) if self.connect_times else 0
+        max_connect = max(self.connect_times) if self.connect_times else 0
+        min_connect = min(self.connect_times) if self.connect_times else 0
+        p95_connect = sorted(self.connect_times)[int(len(self.connect_times) * 0.95)] if self.connect_times else 0
 
-        print(f"\n{Colors.BOLD}{'='*70}{Colors.END}")
-        print(f"{Colors.BOLD}{Colors.BLUE}STRESS TEST NATIJALAR{Colors.END}")
-        print(f"{Colors.BOLD}{'='*70}{Colors.END}\n")
+        avg_vote_lat = sum(self.vote_latencies) / len(self.vote_latencies) if self.vote_latencies else 0
+        max_vote_lat = max(self.vote_latencies) if self.vote_latencies else 0
+        p95_vote_lat = sorted(self.vote_latencies)[int(len(self.vote_latencies) * 0.95)] if self.vote_latencies else 0
 
-        # Connection statistics
-        print(f"{Colors.BOLD}📡 CONNECTION STATISTICS:{Colors.END}")
-        print(f"  Total attempts:      {self.total_connections}")
-        print(f"  {Colors.GREEN}✅ Successful:{Colors.END}        {self.successful_connections} ({self._percent(self.successful_connections, self.total_connections)})")
-        print(f"  {Colors.RED}❌ Failed:{Colors.END}            {self.failed_connections} ({self._percent(self.failed_connections, self.total_connections)})")
+        print("\n" + "=" * 60)
+        print("STRESS TEST NATIJALARI")
+        print("=" * 60)
 
-        if self.connection_times:
-            print(f"\n  Connection timing:")
-            print(f"    Average: {statistics.mean(self.connection_times):.3f}s")
-            print(f"    Median:  {statistics.median(self.connection_times):.3f}s")
-            print(f"    Min:     {min(self.connection_times):.3f}s")
-            print(f"    Max:     {max(self.connection_times):.3f}s")
+        print(f"\n--- Ulanishlar ---")
+        print(f"  {'Jami foydalanuvchilar':<30} {self.total_users}")
+        print(f"  {'Muvaffaqiyatli':<30} {self.connected}")
+        print(f"  {'Muvaffaqiyatsiz':<30} {self.failed_connections}")
+        success_rate = self.connected / self.total_users * 100 if self.total_users else 0
+        print(f"  {'Ulanish darajasi':<30} {success_rate:.1f}%")
 
-        # Vote statistics
-        if self.total_votes > 0:
-            print(f"\n{Colors.BOLD}🗳️  VOTING STATISTICS:{Colors.END}")
-            print(f"  Total votes:         {self.total_votes}")
-            print(f"  {Colors.GREEN}✅ Successful:{Colors.END}        {self.successful_votes} ({self._percent(self.successful_votes, self.total_votes)})")
-            print(f"  {Colors.RED}❌ Failed:{Colors.END}            {self.failed_votes} ({self._percent(self.failed_votes, self.total_votes)})")
+        print(f"\n--- Ulanish vaqti ---")
+        print(f"  {'O`rtacha':<30} {avg_connect * 1000:.0f} ms")
+        print(f"  {'Minimal':<30} {min_connect * 1000:.0f} ms")
+        print(f"  {'Maksimal':<30} {max_connect * 1000:.0f} ms")
+        print(f"  {'95-persentil':<30} {p95_connect * 1000:.0f} ms")
 
-            if self.vote_times:
-                print(f"\n  Vote timing:")
-                print(f"    Average: {statistics.mean(self.vote_times):.3f}s")
-                print(f"    Median:  {statistics.median(self.vote_times):.3f}s")
-                print(f"    Min:     {min(self.vote_times):.3f}s")
-                print(f"    Max:     {max(self.vote_times):.3f}s")
-                print(f"    Votes/sec: {self.total_votes / duration:.2f}")
+        print(f"\n--- Ovoz berish ---")
+        print(f"  {'Yuborilgan ovozlar':<30} {self.votes_sent}")
+        print(f"  {'Tasdiqlangan':<30} {self.votes_confirmed}")
+        print(f"  {'Rad etilgan':<30} {self.votes_rejected}")
+        print(f"  {'Takroriy (duplicate)':<30} {self.duplicate_votes}")
+        print(f"  {'Kandidatlar soni':<30} {self.candidates_voted}")
 
-        # Performance metrics
-        print(f"\n{Colors.BOLD}⚡ PERFORMANCE:{Colors.END}")
-        print(f"  Test duration:       {duration:.2f}s")
-        if self.total_connections > 0:
-            print(f"  Connections/sec:     {self.total_connections / duration:.2f}")
+        if self.vote_latencies:
+            print(f"\n--- Ovoz berish vaqti ---")
+            print(f"  {'O`rtacha':<30} {avg_vote_lat * 1000:.0f} ms")
+            print(f"  {'Maksimal':<30} {max_vote_lat * 1000:.0f} ms")
+            print(f"  {'95-persentil':<30} {p95_vote_lat * 1000:.0f} ms")
 
-        # Error summary
-        if self.errors:
-            print(f"\n{Colors.BOLD}{Colors.RED}❌ ERRORS:{Colors.END}")
-            for error, count in sorted(self.errors.items(), key=lambda x: x[1], reverse=True)[:10]:
-                print(f"  [{count:3d}x] {error}")
+        print(f"\n--- Umumiy ---")
+        print(f"  {'Qabul qilingan xabarlar':<30} {self.messages_received}")
+        print(f"  {'Xatolar':<30} {self.errors}")
 
-        # Overall result
-        success_rate = self._percent(self.successful_connections, self.total_connections)
-        print(f"\n{Colors.BOLD}{'='*70}{Colors.END}")
-        if float(success_rate.strip('%')) >= 95:
-            print(f"{Colors.GREEN}{Colors.BOLD}✅ TEST PASSED - Success rate: {success_rate}{Colors.END}")
-        elif float(success_rate.strip('%')) >= 80:
-            print(f"{Colors.YELLOW}{Colors.BOLD}⚠️  TEST WARNING - Success rate: {success_rate}{Colors.END}")
+        if self.connection_errors:
+            print(f"\n--- Xato turlari ---")
+            error_counts = {}
+            for err in self.connection_errors:
+                err_str = str(err)[:80]
+                error_counts[err_str] = error_counts.get(err_str, 0) + 1
+            for err, count in sorted(error_counts.items(), key=lambda x: -x[1])[:10]:
+                print(f"  [{count}x] {err}")
+
+        print("\n" + "=" * 60)
+        if success_rate >= 99 and avg_connect < 1:
+            print("NATIJA: AJOYIB - Tizim barqaror ishlaydi")
+        elif success_rate >= 95 and avg_connect < 2:
+            print("NATIJA: YAXSHI - Tizim yetarli darajada ishlaydi")
+        elif success_rate >= 80:
+            print("NATIJA: QONIQARLI - Ba'zi muammolar bor")
         else:
-            print(f"{Colors.RED}{Colors.BOLD}❌ TEST FAILED - Success rate: {success_rate}{Colors.END}")
-        print(f"{Colors.BOLD}{'='*70}{Colors.END}\n")
-
-    def _percent(self, value: int, total: int) -> str:
-        if total == 0:
-            return "0.00%"
-        return f"{(value / total * 100):.2f}%"
+            print("NATIJA: YOMON - Tizimni optimallashtirish kerak")
+        print("=" * 60)
 
 
-async def connect_user(api_url: str, event_link: str, user_id: int, result: StressTestResult,
-                       duration: int = 60, vote: bool = False) -> bool:
-    """Connect a single user via WebSocket"""
-    ws_url = f"ws://{api_url.replace('http://', '').replace('https://', '')}/ws/vote/{event_link}"
+stats = Stats()
 
-    start_time = time.time()
 
-    try:
-        async with websockets.connect(ws_url, ping_interval=20, ping_timeout=30) as ws:
-            connection_time = time.time() - start_time
-            result.add_connection_success(connection_time)
+class AdminBot:
+    """Admin sifatida login qilib, timer boshlash va keyingi kandidatga o'tish."""
 
-            print(f"{Colors.GREEN}✅{Colors.END} User {user_id:3d} connected ({connection_time:.3f}s)")
+    def __init__(self, api_url: str, username: str, password: str):
+        self.api_url = api_url
+        self.username = username
+        self.password = password
+        self.token = None
+        self.session = None
 
-            # Receive initial data
-            try:
-                response = await asyncio.wait_for(ws.recv(), timeout=10)
-                data = json.loads(response)
+    async def login(self):
+        self.session = aiohttp.ClientSession()
+        async with self.session.post(
+            f"{self.api_url}/auth/login",
+            json={"username": self.username, "password": self.password},
+        ) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                raise Exception(f"Admin login failed: {resp.status} {text}")
+            data = await resp.json()
+            self.token = data["access_token"]
+            print(f"  Admin login muvaffaqiyatli")
 
-                # If voting is enabled, cast a vote
-                if vote and data.get('type') == 'current_candidate':
-                    candidate_data = data.get('data', {})
-                    candidate = candidate_data.get('candidate')
+    def _headers(self):
+        return {"Authorization": f"Bearer {self.token}"}
 
-                    if candidate:
-                        # Wait a random time before voting (simulate real user behavior)
-                        await asyncio.sleep(0.5)
+    async def get_event_by_link(self, link: str) -> dict:
+        async with self.session.get(
+            f"{self.api_url}/events/by-link/{link}",
+            headers=self._headers(),
+        ) as resp:
+            if resp.status != 200:
+                raise Exception(f"Event not found: {resp.status}")
+            return await resp.json()
 
-                        vote_start = time.time()
-                        vote_payload = {
-                            "type": "cast_vote",
-                            "vote_type": "yes",  # Always vote yes for stress test
-                            "nonce": f"stress-test-{user_id}-{int(time.time())}",
-                            "device_id": f"device-{user_id}"
-                        }
-
-                        await ws.send(json.dumps(vote_payload))
-
-                        # Wait for confirmation
-                        vote_response = await asyncio.wait_for(ws.recv(), timeout=5)
-                        vote_data = json.loads(vote_response)
-
-                        vote_time = time.time() - vote_start
-
-                        if vote_data.get('type') == 'vote_confirmed':
-                            result.add_vote_success(vote_time)
-                            print(f"{Colors.GREEN}🗳️ {Colors.END} User {user_id:3d} voted successfully ({vote_time:.3f}s)")
-                        else:
-                            result.add_vote_failure(f"Vote not confirmed: {vote_data.get('type')}")
-                            print(f"{Colors.RED}❌{Colors.END} User {user_id:3d} vote failed: {vote_data.get('message', 'Unknown')}")
-
-            except asyncio.TimeoutError:
-                result.add_connection_failure("Initial data timeout")
-                print(f"{Colors.RED}❌{Colors.END} User {user_id:3d} timeout waiting for initial data")
+    async def start_timer(self, event_id: int, duration_sec: int = None):
+        body = {}
+        if duration_sec:
+            body["duration_sec"] = duration_sec
+        async with self.session.post(
+            f"{self.api_url}/event-management/{event_id}/start-timer",
+            json=body,
+            headers=self._headers(),
+        ) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                print(f"  Timer xato: {resp.status} {text[:100]}")
                 return False
-
-            # Keep connection alive
-            end_time = time.time() + duration
-            while time.time() < end_time:
-                try:
-                    # Send ping
-                    await ws.send(json.dumps({"type": "ping"}))
-
-                    # Wait for messages with timeout
-                    try:
-                        message = await asyncio.wait_for(ws.recv(), timeout=5)
-                        # Process any incoming messages
-                    except asyncio.TimeoutError:
-                        pass  # No message, that's ok
-
-                    await asyncio.sleep(1)
-
-                except Exception as e:
-                    result.add_connection_failure(f"Connection lost: {type(e).__name__}")
-                    print(f"{Colors.RED}❌{Colors.END} User {user_id:3d} connection lost: {e}")
-                    return False
-
-            print(f"{Colors.BLUE}👋{Colors.END} User {user_id:3d} disconnecting")
             return True
 
-    except websockets.exceptions.InvalidStatusCode as e:
-        result.add_connection_failure(f"Invalid status: {e.status_code}")
-        print(f"{Colors.RED}❌{Colors.END} User {user_id:3d} connection failed: HTTP {e.status_code}")
-        return False
-    except ConnectionRefusedError:
-        result.add_connection_failure("Connection refused")
-        print(f"{Colors.RED}❌{Colors.END} User {user_id:3d} connection refused")
-        return False
-    except Exception as e:
-        result.add_connection_failure(f"{type(e).__name__}: {str(e)[:50]}")
-        print(f"{Colors.RED}❌{Colors.END} User {user_id:3d} error: {type(e).__name__}")
-        return False
+    async def next_candidate(self, event_id: int):
+        async with self.session.post(
+            f"{self.api_url}/event-management/{event_id}/next-candidate",
+            headers=self._headers(),
+        ) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                print(f"  Next candidate xato: {resp.status} {text[:100]}")
+                return False
+            return True
+
+    async def get_current_candidate(self, event_id: int):
+        async with self.session.get(
+            f"{self.api_url}/event-management/{event_id}/current-candidate",
+            headers=self._headers(),
+        ) as resp:
+            if resp.status != 200:
+                return None
+            return await resp.json()
+
+    async def close(self):
+        if self.session:
+            await self.session.close()
 
 
-async def get_system_stats(api_url: str) -> Dict:
-    """Get system statistics from API"""
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{api_url}/ws-stats", timeout=5) as response:
-                if response.status == 200:
-                    return await response.json()
-    except Exception as e:
-        print(f"{Colors.YELLOW}⚠️  Failed to get stats: {e}{Colors.END}")
-    return {}
+async def simulate_voter(
+    ws_url: str,
+    link: str,
+    user_id: int,
+    semaphore: asyncio.Semaphore,
+    stop_event: asyncio.Event,
+    vote_delay_range: tuple = (0.5, 3.0),
+):
+    """Bitta ovoz beruvchi — ulanib turadi, har yangi kandidatga ovoz beradi."""
+    async with semaphore:
+        ws_full_url = f"{ws_url}/ws/vote/{link}"
+        device_id = str(uuid.uuid4())
+
+        # Origin header
+        origin = ws_url.replace("ws://", "http://").replace("wss://", "https://")
+        parts = origin.rsplit(":", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            web_port = int(parts[1]) - 1
+            origin = f"{parts[0]}:{web_port}"
+
+        start_time = time.time()
+        current_candidate_id = None
+        voted_candidates = set()
+
+        try:
+            async with websockets.connect(
+                ws_full_url,
+                open_timeout=30,
+                ping_interval=None,
+                ping_timeout=None,
+                additional_headers={
+                    "Origin": origin,
+                    "X-Forwarded-For": f"10.0.{user_id // 256}.{user_id % 256}",
+                },
+            ) as ws:
+                connect_time = time.time() - start_time
+                await stats.append_to("connect_times", connect_time)
+                await stats.inc("connected")
+
+                connected_count = stats.connected
+                if connected_count % 50 == 0:
+                    print(f"  [{connected_count}/{stats.total_users}] ulanish muvaffaqiyatli...")
+
+                # Ovoz berish uchun alohida asyncio.Event — xabar loop bloklanmaydi
+                vote_trigger = asyncio.Event()
+                pending_vote_candidate = None
+                vote_attempted = set()  # Ovoz yuborish boshlangan kandidatlar
+
+                async def receive_loop():
+                    """Faqat xabarlarni qabul qiladi — hech qachon bloklanmaydi."""
+                    nonlocal current_candidate_id, pending_vote_candidate
+                    try:
+                        async for message in ws:
+                            await stats.inc("messages_received")
+                            try:
+                                data = json.loads(message)
+                            except json.JSONDecodeError:
+                                continue
+
+                            msg_type = data.get("type")
+
+                            if msg_type == "current_candidate":
+                                cand_data = data.get("data")
+                                if cand_data and cand_data.get("candidate"):
+                                    new_id = cand_data["candidate"]["id"]
+                                    timer = cand_data.get("timer", {})
+                                    timer_running = timer.get("running", False)
+                                    remaining = timer.get("remaining_ms", 0)
+
+                                    if new_id != current_candidate_id:
+                                        current_candidate_id = new_id
+
+                                    # Ovoz berish kerakligini signal qilish (bloklamasdan)
+                                    if (timer_running and remaining > 1000
+                                            and new_id not in voted_candidates
+                                            and new_id not in vote_attempted):
+                                        pending_vote_candidate = new_id
+                                        vote_trigger.set()
+
+                                elif not cand_data or not cand_data.get("candidate"):
+                                    idx = (cand_data or {}).get("index", 0)
+                                    total = (cand_data or {}).get("total", 0)
+                                    if total > 0 and idx >= total:
+                                        return  # Event tugadi
+
+                            elif msg_type == "vote_confirmed":
+                                await stats.inc("votes_confirmed")
+                                cand_id = data.get("candidate_id")
+                                if cand_id:
+                                    voted_candidates.add(cand_id)
+                                    await stats.inc("candidates_voted")
+
+                            elif msg_type == "error":
+                                err_msg = data.get("message", "")
+                                if "allaqachon" in err_msg:
+                                    await stats.inc("duplicate_votes")
+                                else:
+                                    await stats.inc("votes_rejected")
+
+                    except websockets.exceptions.ConnectionClosed:
+                        pass
+                    except Exception:
+                        pass
+
+                async def vote_loop():
+                    """Alohida loop — signal kelganda ovoz beradi."""
+                    nonlocal pending_vote_candidate
+                    try:
+                        while not stop_event.is_set():
+                            vote_trigger.clear()
+                            await vote_trigger.wait()
+
+                            cand_id = pending_vote_candidate
+                            if not cand_id or cand_id in voted_candidates or cand_id in vote_attempted:
+                                continue
+
+                            vote_attempted.add(cand_id)
+
+                            # Random kutish
+                            delay = random.uniform(*vote_delay_range)
+                            await asyncio.sleep(delay)
+
+                            # Hali ham aktiv ekanligini tekshirish
+                            if cand_id in voted_candidates:
+                                continue
+
+                            vote_type = random.choice(["yes", "no", "neutral"])
+                            nonce = str(uuid.uuid4())
+                            vote_msg = {
+                                "type": "cast_vote",
+                                "vote_type": vote_type,
+                                "nonce": nonce,
+                                "device_id": device_id,
+                                "candidate_id": cand_id,
+                            }
+                            try:
+                                await ws.send(json.dumps(vote_msg))
+                                await stats.inc("votes_sent")
+                            except Exception:
+                                break
+                    except asyncio.CancelledError:
+                        pass
+
+                async def ping_loop():
+                    try:
+                        while not stop_event.is_set():
+                            await asyncio.sleep(15)
+                            try:
+                                await ws.send(json.dumps({"type": "ping"}))
+                            except Exception:
+                                break
+                    except asyncio.CancelledError:
+                        pass
+
+                receive_task = asyncio.create_task(receive_loop())
+                vote_task = asyncio.create_task(vote_loop())
+                ping_task = asyncio.create_task(ping_loop())
+
+                # stop_event kutish yoki receive tugashini kutish
+                done, pending = await asyncio.wait(
+                    [receive_task, asyncio.create_task(stop_event.wait())],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for task in [vote_task, ping_task, *pending]:
+                    if not task.done():
+                        task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+
+        except Exception as e:
+            await stats.inc("failed_connections")
+            await stats.inc("errors")
+            await stats.append_to("connection_errors", e)
 
 
-async def monitor_system(api_url: str, interval: int = 5):
-    """Monitor system stats during test"""
-    print(f"\n{Colors.BOLD}📊 System Monitoring Started{Colors.END}")
-    print(f"{Colors.BOLD}{'Time':<20} {'Connections':<15} {'CPU %':<10} {'RAM MB':<10} {'Files':<10}{Colors.END}")
-    print("-" * 70)
+async def admin_flow(
+    admin: AdminBot,
+    event_id: int,
+    timer_duration: int,
+    wait_after_timer: int,
+    stop_event: asyncio.Event,
+):
+    """Admin sifatida timer boshlash va kandidatlarni boshqarish."""
+    candidate_num = 0
+    while not stop_event.is_set():
+        candidate_num += 1
 
-    while True:
-        stats = await get_system_stats(api_url)
-        if stats:
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            connections = stats.get('total_vote_connections', 0)
-            system = stats.get('system', {})
-            cpu = system.get('cpu_percent', 0)
-            ram = system.get('memory_mb', 0)
-            files = system.get('open_files', 0)
+        # Joriy kandidatni tekshirish
+        current = await admin.get_current_candidate(event_id)
+        if not current or not current.get("candidate"):
+            print(f"\n  Admin: Barcha kandidatlar tugadi!")
+            stop_event.set()
+            break
 
-            print(f"{timestamp:<20} {connections:<15} {cpu:<10.1f} {ram:<10.1f} {files:<10}")
+        cand_name = current["candidate"].get("full_name", "Noma'lum")
+        idx = current.get("index", 0) + 1
+        total = current.get("total", 0)
+        timer = current.get("timer", {})
 
-        await asyncio.sleep(interval)
+        # Agar timer allaqachon ishlayotgan bo'lsa, kutamiz
+        if timer.get("running") and timer.get("remaining_ms", 0) > 0:
+            remaining_sec = timer["remaining_ms"] / 1000
+            print(f"\n  Admin: Kandidat {idx}/{total}: {cand_name} — timer ishlayapti ({remaining_sec:.0f}s qoldi)")
+            await asyncio.sleep(remaining_sec + 1)
+        else:
+            # Timer boshlash
+            print(f"\n  Admin: Kandidat {idx}/{total}: {cand_name} — timer boshlanmoqda ({timer_duration}s)...")
+            success = await admin.start_timer(event_id, timer_duration)
+            if not success:
+                print(f"  Admin: Timer boshlanmadi, 3s kutilmoqda...")
+                await asyncio.sleep(3)
+                continue
 
+            # Timer tugashini kutish
+            await asyncio.sleep(timer_duration + 1)
 
-async def stress_test_concurrent(api_url: str, event_link: str, num_users: int,
-                                 duration: int, vote: bool, batch_size: int = 50):
-    """Run stress test with concurrent connections"""
-    result = StressTestResult()
-    result.start_time = time.time()
+        # Timer tugagandan keyin qisqa pauza
+        print(f"  Admin: Timer tugadi. {wait_after_timer}s kutilmoqda...")
+        await asyncio.sleep(wait_after_timer)
 
-    print(f"\n{Colors.BOLD}{Colors.BLUE}🚀 Starting Stress Test{Colors.END}")
-    print(f"  API URL:      {api_url}")
-    print(f"  Event Link:   {event_link}")
-    print(f"  Users:        {num_users}")
-    print(f"  Duration:     {duration}s")
-    print(f"  Voting:       {vote}")
-    print(f"  Batch size:   {batch_size}")
-    print(f"{Colors.BOLD}{'='*70}{Colors.END}\n")
-
-    # Start monitoring in background
-    monitor_task = asyncio.create_task(monitor_system(api_url))
-
-    # Connect users in batches
-    for batch_start in range(0, num_users, batch_size):
-        batch_end = min(batch_start + batch_size, num_users)
-        batch_num = batch_start // batch_size + 1
-        total_batches = (num_users + batch_size - 1) // batch_size
-
-        print(f"\n{Colors.BOLD}📦 Batch {batch_num}/{total_batches}: Connecting users {batch_start}-{batch_end}...{Colors.END}")
-
-        tasks = []
-        for user_id in range(batch_start, batch_end):
-            task = asyncio.create_task(
-                connect_user(api_url, event_link, user_id, result, duration, vote)
-            )
-            tasks.append(task)
-
-        # Wait for batch to connect
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Small delay between batches
-        if batch_end < num_users:
-            print(f"{Colors.YELLOW}⏳ Waiting 2s before next batch...{Colors.END}")
+        # Keyingi kandidatga o'tish
+        print(f"  Admin: Keyingi kandidatga o'tilmoqda...")
+        success = await admin.next_candidate(event_id)
+        if not success:
+            print(f"  Admin: Keyingi kandidatga o'tib bo'lmadi. Event tugagan bo'lishi mumkin.")
+            # Tekshirish
+            current = await admin.get_current_candidate(event_id)
+            if not current or not current.get("candidate"):
+                stop_event.set()
+                break
             await asyncio.sleep(2)
 
-    # Cancel monitoring
-    monitor_task.cancel()
-    try:
-        await monitor_task
-    except asyncio.CancelledError:
-        pass
-
-    result.end_time = time.time()
-
-    # Get final stats
-    print(f"\n{Colors.BOLD}📊 Final System Stats:{Colors.END}")
-    final_stats = await get_system_stats(api_url)
-    if final_stats:
-        print(json.dumps(final_stats, indent=2))
-
-    # Print results
-    result.print_summary()
-
-    return result
+        # Kandidatlar o'rtasida qisqa pauza
+        await asyncio.sleep(1)
 
 
-async def stress_test_ramp_up(api_url: str, event_link: str, max_users: int,
-                              ramp_time: int, hold_time: int, vote: bool):
-    """Gradually ramp up connections"""
-    result = StressTestResult()
-    result.start_time = time.time()
+async def run_stress_test(args):
+    stats.total_users = args.users
+    http_url = args.url
+    ws_url = http_url.replace("http://", "ws://").replace("https://", "wss://")
+    link = args.link
 
-    print(f"\n{Colors.BOLD}{Colors.BLUE}🚀 Starting Ramp-Up Test{Colors.END}")
-    print(f"  Max Users:    {max_users}")
-    print(f"  Ramp Time:    {ramp_time}s")
-    print(f"  Hold Time:    {hold_time}s")
-    print(f"{Colors.BOLD}{'='*70}{Colors.END}\n")
+    max_concurrent = min(args.users, args.max_concurrent)
+    semaphore = asyncio.Semaphore(max_concurrent)
+    stop_event = asyncio.Event()
 
-    # Start monitoring
-    monitor_task = asyncio.create_task(monitor_system(api_url))
+    print("=" * 60)
+    print("OVOZ BERISH TIZIMI STRESS TEST")
+    print("=" * 60)
+    print(f"  Server: {http_url}")
+    print(f"  Event link: {link}")
+    print(f"  Foydalanuvchilar: {args.users}")
+    print(f"  Bir vaqtda maks: {max_concurrent}")
+    print(f"  Admin boshqaruvi: {'Ha' if not args.no_admin else 'Yo`q (qo`lda boshqarish)'}")
+    if not args.no_admin:
+        print(f"  Timer davomiyligi: {args.timer}s")
+        print(f"  Kandidatlar orasidagi pauza: {args.pause}s")
+    print()
 
-    tasks = []
-    interval = ramp_time / max_users
+    # Admin login
+    admin = None
+    event_id = None
+    if not args.no_admin:
+        print("--- Admin login ---")
+        admin = AdminBot(http_url, args.admin_user, args.admin_pass)
+        try:
+            await admin.login()
+            event_data = await admin.get_event_by_link(link)
+            event_id = event_data["id"]
+            print(f"  Event ID: {event_id}")
+            print(f"  Event nomi: {event_data.get('name', 'N/A')}")
 
-    # Ramp up
-    print(f"{Colors.BOLD}📈 Ramping up...{Colors.END}")
-    for user_id in range(max_users):
-        task = asyncio.create_task(
-            connect_user(api_url, event_link, user_id, result, ramp_time + hold_time, vote)
+            # Joriy kandidatni tekshirish
+            current = await admin.get_current_candidate(event_id)
+            if current and current.get("candidate"):
+                total = current.get("total", 0)
+                idx = current.get("index", 0) + 1
+                print(f"  Kandidatlar: {total} ta (hozirgi: {idx}/{total})")
+            else:
+                print(f"  Diqqat: Hozirda aktiv kandidat yo'q")
+        except Exception as e:
+            print(f"  Admin xato: {e}")
+            print(f"  --no-admin rejimda davom etilmoqda...")
+            args.no_admin = True
+            if admin:
+                await admin.close()
+                admin = None
+
+    # Foydalanuvchilarni ulash
+    print(f"\n--- Foydalanuvchilarni ulash ---")
+    start_time = time.time()
+
+    batch_size = args.batch_size
+    total_batches = (args.users + batch_size - 1) // batch_size
+
+    voter_tasks = []
+    for batch_num in range(total_batches):
+        batch_start = batch_num * batch_size
+        batch_end = min(batch_start + batch_size, args.users)
+        current_batch_size = batch_end - batch_start
+
+        print(f"  Bosqich {batch_num + 1}/{total_batches}: {current_batch_size} ta foydalanuvchi...")
+
+        for i in range(batch_start, batch_end):
+            task = asyncio.create_task(
+                simulate_voter(
+                    ws_url=ws_url,
+                    link=link,
+                    user_id=i,
+                    semaphore=semaphore,
+                    stop_event=stop_event,
+                    vote_delay_range=(args.min_vote_delay, args.max_vote_delay),
+                )
+            )
+            voter_tasks.append(task)
+            if i % 10 == 0:
+                await asyncio.sleep(0.05)
+
+        if batch_num < total_batches - 1:
+            await asyncio.sleep(args.batch_delay)
+
+    # Ulanish tugashini biroz kutish
+    connect_wait = min(5, args.users / 50)
+    print(f"\n  Ulanishlarni barqarorlashtirish uchun {connect_wait:.0f}s kutilmoqda...")
+    await asyncio.sleep(connect_wait)
+    print(f"  Ulangan: {stats.connected}/{stats.total_users}")
+
+    # Enter bosilsa to'xtatish uchun stdin listener
+    async def wait_for_enter():
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, sys.stdin.readline)
+        print("\n  Enter bosildi — test to'xtatilmoqda...")
+        stop_event.set()
+
+    enter_task = asyncio.create_task(wait_for_enter())
+
+    # Admin flow boshlash
+    if not args.no_admin and admin and event_id:
+        print(f"\n--- Ovoz berish boshlandi ---")
+        print(f"  To'xtatish uchun Enter bosing\n")
+        admin_task = asyncio.create_task(
+            admin_flow(admin, event_id, args.timer, args.pause, stop_event)
         )
-        tasks.append(task)
 
-        if (user_id + 1) % 10 == 0:
-            print(f"  {user_id + 1} users connected...")
+        # Admin, enter yoki timeout kutish
+        done, pending = await asyncio.wait(
+            [admin_task, enter_task],
+            return_when=asyncio.FIRST_COMPLETED,
+            timeout=args.timeout,
+        )
 
-        await asyncio.sleep(interval)
+        # Admin tugagandan keyin voterlarga 3s vaqt berish
+        if admin_task in done and not stop_event.is_set():
+            print(f"\n  Admin flow tugadi. 3s kutilmoqda...")
+            await asyncio.sleep(3)
 
-    # Hold
-    print(f"\n{Colors.BOLD}⏸️  Holding at {max_users} users for {hold_time}s...{Colors.END}")
-    await asyncio.sleep(hold_time)
+        stop_event.set()
 
-    # Wait for all to finish
-    print(f"\n{Colors.BOLD}⏳ Waiting for users to disconnect...{Colors.END}")
-    await asyncio.gather(*tasks, return_exceptions=True)
+        # Barcha tasklarni tozalash
+        for task in voter_tasks:
+            if not task.done():
+                task.cancel()
+        if not admin_task.done():
+            admin_task.cancel()
+        if not enter_task.done():
+            enter_task.cancel()
 
-    # Cancel monitoring
-    monitor_task.cancel()
-    try:
-        await monitor_task
-    except asyncio.CancelledError:
-        pass
+        await asyncio.gather(*voter_tasks, admin_task, return_exceptions=True)
+        await admin.close()
+    else:
+        # Admin yo'q — Enter yoki timeout kutish
+        print(f"\n--- Admin qo'lda boshqaradi ---")
+        print(f"  Ovoz berish admin tomonidan boshlanishini kutmoqda...")
+        print(f"  To'xtatish uchun Enter bosing\n")
 
-    result.end_time = time.time()
-    result.print_summary()
+        done, pending = await asyncio.wait(
+            [enter_task],
+            return_when=asyncio.FIRST_COMPLETED,
+            timeout=args.timeout,
+        )
 
-    return result
+        if not stop_event.is_set():
+            print(f"\n  Timeout ({args.timeout}s) tugadi")
+            stop_event.set()
+
+        for task in voter_tasks:
+            if not task.done():
+                task.cancel()
+        if not enter_task.done():
+            enter_task.cancel()
+
+        await asyncio.gather(*voter_tasks, return_exceptions=True)
+
+    total_time = time.time() - start_time
+
+    # Natijalar
+    stats.summary()
+    print(f"\nUmumiy vaqt: {total_time:.1f} sek")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Stress test for voting system',
+        description="Ovoz berish tizimi stress test",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Test 100 concurrent users for 30 seconds
-  python stress_test.py --api http://localhost:2014 --link EVENT_LINK --users 100 --duration 30
+Misollar:
+  # 50 ta foydalanuvchi, avtomatik admin
+  python3 stress_test.py --url http://127.0.0.1:2012 --link 37694e2d --users 50
 
-  # Test with voting enabled
-  python stress_test.py --api http://localhost:2014 --link EVENT_LINK --users 50 --vote
+  # 200 ta foydalanuvchi, 20 soniya timer
+  python3 stress_test.py --url http://127.0.0.1:2012 --link 37694e2d --users 200 --timer 20
 
-  # Ramp up to 200 users over 60 seconds, hold for 120 seconds
-  python stress_test.py --api http://localhost:2014 --link EVENT_LINK --mode ramp --max-users 200 --ramp-time 60 --hold-time 120
+  # 500 ta foydalanuvchi, admin qo'lda boshqaradi
+  python3 stress_test.py --url http://127.0.0.1:2012 --link 37694e2d --users 500 --no-admin
 
-  # Test in smaller batches (50 users at a time)
-  python stress_test.py --api http://localhost:2014 --link EVENT_LINK --users 200 --batch-size 50
-        """
+  # Production server
+  python3 stress_test.py --url http://213.230.97.43:2012 --link 37694e2d --users 300
+        """,
     )
 
-    parser.add_argument('--api', required=True, help='API URL (e.g., http://localhost:2014)')
-    parser.add_argument('--link', required=True, help='Event link UUID')
-    parser.add_argument('--mode', choices=['concurrent', 'ramp'], default='concurrent',
-                       help='Test mode: concurrent (all at once) or ramp (gradual)')
-
-    # Concurrent mode options
-    parser.add_argument('--users', type=int, default=100, help='Number of concurrent users')
-    parser.add_argument('--duration', type=int, default=60, help='Test duration in seconds')
-    parser.add_argument('--batch-size', type=int, default=50, help='Connect users in batches')
-
-    # Ramp mode options
-    parser.add_argument('--max-users', type=int, default=200, help='Maximum users for ramp mode')
-    parser.add_argument('--ramp-time', type=int, default=60, help='Ramp up time in seconds')
-    parser.add_argument('--hold-time', type=int, default=120, help='Hold time at max users')
-
-    # Common options
-    parser.add_argument('--vote', action='store_true', help='Enable voting (cast votes during test)')
+    parser.add_argument("--url", required=True, help="API server URL (masalan: http://127.0.0.1:2012)")
+    parser.add_argument("--link", required=True, help="Event link (UUID yoki to'liq URL)")
+    parser.add_argument("--users", type=int, default=50, help="Foydalanuvchilar soni (default: 50)")
+    parser.add_argument("--timer", type=int, default=15, help="Timer davomiyligi sekundlarda (default: 15)")
+    parser.add_argument("--pause", type=int, default=3, help="Kandidatlar orasidagi pauza, sek (default: 3)")
+    parser.add_argument("--no-admin", action="store_true", help="Admin boshqaruvini o'chirish (qo'lda boshqarish)")
+    parser.add_argument("--admin-user", default="admin", help="Admin username (default: admin)")
+    parser.add_argument("--admin-pass", default="admin123", help="Admin password")
+    parser.add_argument("--max-concurrent", type=int, default=300, help="Bir vaqtda maks ulanishlar (default: 300)")
+    parser.add_argument("--batch-size", type=int, default=50, help="Har bosqichdagi foydalanuvchilar (default: 50)")
+    parser.add_argument("--batch-delay", type=float, default=1, help="Bosqichlar orasidagi kutish, sek (default: 1)")
+    parser.add_argument("--min-vote-delay", type=float, default=0.5, help="Minimal ovoz berish kutishi, sek (default: 0.5)")
+    parser.add_argument("--max-vote-delay", type=float, default=5.0, help="Maksimal ovoz berish kutishi, sek (default: 5.0)")
+    parser.add_argument("--timeout", type=int, default=600, help="Umumiy timeout sekundlarda (default: 600)")
 
     args = parser.parse_args()
 
-    try:
-        if args.mode == 'concurrent':
-            asyncio.run(stress_test_concurrent(
-                args.api, args.link, args.users, args.duration, args.vote, args.batch_size
-            ))
-        elif args.mode == 'ramp':
-            asyncio.run(stress_test_ramp_up(
-                args.api, args.link, args.max_users, args.ramp_time, args.hold_time, args.vote
-            ))
-    except KeyboardInterrupt:
-        print(f"\n\n{Colors.YELLOW}⚠️  Test interrupted by user{Colors.END}")
-        sys.exit(1)
+    # URL'dan link ajratish
+    if "/" in args.link:
+        args.link = args.link.rstrip("/").split("/")[-1]
+        print(f"Link ajratildi: {args.link}")
+
+    asyncio.run(run_stress_test(args))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

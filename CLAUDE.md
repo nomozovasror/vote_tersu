@@ -8,7 +8,7 @@ Real-time voting system with FastAPI backend and React frontend. Features WebSoc
 
 ## Key Technologies
 
-- **Backend**: FastAPI + SQLAlchemy + SQLite + WebSocket
+- **Backend**: FastAPI + SQLAlchemy + PostgreSQL + WebSocket
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS
 - **Auth**: JWT (admin only)
 - **Real-time**: WebSocket connections for voting and display updates
@@ -66,13 +66,13 @@ npm run build
 ### Database Operations
 
 ```bash
-# Initialize/reset database
+# Initialize database (runs automatically on container start)
 cd api
 python -m app.init_db
 
-# Delete and recreate database
-rm -rf ../data/voting.db
-python -m app.init_db
+# Reset database (via docker)
+docker-compose exec db psql -U voting -d voting -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+docker-compose restart api
 ```
 
 ### Testing
@@ -185,7 +185,7 @@ The `ensure_schema()` function in `core/database.py` handles lightweight migrati
 Environment variables (`.env` file):
 
 ```env
-DATABASE_URL=sqlite:///./data/voting.db
+DATABASE_URL=postgresql://voting:voting_secret@db:5432/voting
 SECRET_KEY=your-secret-key
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
@@ -282,7 +282,7 @@ To create a grouped voting scenario (e.g., 4 candidates competing for one positi
 ## Production Considerations
 
 - Change `SECRET_KEY` and `ADMIN_PASSWORD` in production
-- Consider migrating from SQLite to PostgreSQL for better concurrency
+- PostgreSQL is used for production (better concurrency than SQLite)
 - Set up proper HTTPS/WSS for WebSocket connections
 - Configure proper CORS origins (remove wildcard if present)
 - Set up logging and monitoring for WebSocket connections

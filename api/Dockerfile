@@ -30,13 +30,4 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # Multi-worker setup breaks WebSocket broadcast (each worker has own ConnectionManager)
 # For production with multiple workers, implement Redis pub/sub or use sticky sessions
 CMD python -m app.init_db && \
-    uvicorn app.main:app \
-    --host 0.0.0.0 \
-    --port 8000 \
-    --workers 1 \
-    --loop uvloop \
-    --timeout-keep-alive 120 \
-    --limit-concurrency 5000 \
-    --backlog 4096 \
-    --ws-ping-interval 20 \
-    --ws-ping-timeout 30
+    python -c "import uvicorn; uvicorn.run('app.main:app', host='0.0.0.0', port=8000, workers=1, loop='uvloop', timeout_keep_alive=120, limit_concurrency=5000, backlog=4096, ws_ping_interval=None, ws_ping_timeout=None)"

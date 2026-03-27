@@ -2,7 +2,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from datetime import datetime, timedelta, timezone
-from ..core.database import get_db
+from ..core.database import SessionLocal
 from ..models.event import Event, EventCandidate, EventStatus
 from ..models.vote import Vote
 from ..models.candidate import Candidate
@@ -192,384 +192,32 @@ def build_display_update_payload(db: Session, event: Event):
     return base_payload
 
 
-@router.websocket("/ws/vote/{link}")
-async def websocket_vote_endpoint(websocket: WebSocket, link: str):
-    """WebSocket for sequential yes/no/neutral voting"""
-    db_gen = get_db()
-    db = next(db_gen)
-    connected = False
+def get_candidate_vote_tally(db: Session, event_id: int, candidate_id: int):
+    """Get vote tally for a specific candidate."""
+    yes_count = db.query(func.count(Vote.id)).filter(
+        Vote.event_id == event_id,
+        Vote.candidate_id == candidate_id,
+        Vote.vote_type == 'yes'
+    ).scalar() or 0
 
-    try:
-        db.expire_all()
-        # Verify event exists
-        event = db.query(Event).filter(Event.link == link).first()
-        if not event:
-            await websocket.close(code=4004, reason="Event not found")
-            return
+    no_count = db.query(func.count(Vote.id)).filter(
+        Vote.event_id == event_id,
+        Vote.candidate_id == candidate_id,
+        Vote.vote_type == 'no'
+    ).scalar() or 0
 
-        # Allow connections for active and finished events
-        # (finished events need WebSocket for completion notifications)
-        if event.status not in (EventStatus.active, EventStatus.finished):
-            await websocket.close(code=4003, reason="Event is not available")
-            return
+    neutral_count = db.query(func.count(Vote.id)).filter(
+        Vote.event_id == event_id,
+        Vote.candidate_id == candidate_id,
+        Vote.vote_type == 'neutral'
+    ).scalar() or 0
 
-        await manager.connect_vote(websocket, link)
-        connected = True
-
-        # Send current candidate info
-        db.expire_all()
-        current_candidate = get_current_voting_candidate(db, event.id)
-        await websocket.send_json({
-            "type": "current_candidate",
-            "data": current_candidate
-        })
-
-        # Send initial tally
-        if current_candidate and current_candidate.get("candidate"):
-            tally = get_candidate_vote_tally(db, event.id, current_candidate["candidate"]["id"])
-            await websocket.send_json({
-                "type": "tally_update",
-                "data": tally
-            })
-
-        while True:
-            try:
-                data = await websocket.receive_json()
-            except Exception as e:
-                # JSON parsing error or connection closed
-                print(f"Error receiving message: {e}")
-                break
-
-            # Handle ping-pong for connection health
-            if data.get("type") == "ping":
-                await websocket.send_json({"type": "pong"})
-                continue
-
-            if data.get("type") == "cast_vote":
-                db.expire_all()
-                vote_type = data.get("vote_type")  # 'yes', 'no', 'neutral'
-                nonce = data.get("nonce")
-                device_id = data.get("device_id")  # Device fingerprint for multi-device voting
-
-                if not vote_type or not nonce:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Missing vote_type or nonce"
-                    })
-                    continue
-
-                if vote_type not in ['yes', 'no', 'neutral']:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Invalid vote_type. Must be 'yes', 'no', or 'neutral'"
-                    })
-                    continue
-
-                # Get client IP
-                client_ip = websocket.client.host if websocket.client else "unknown"
-
-                # Get current candidate
-                current_cand = get_current_voting_candidate(db, event.id)
-                if not current_cand or not current_cand.get("candidate"):
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "No active candidate for voting"
-                    })
-                    continue
-
-                timer_info = current_cand.get("timer") or {}
-                if not timer_info.get("running"):
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Voting has not started for this candidate yet"
-                    })
-                    continue
-
-                if timer_info.get("remaining_ms", 0) <= 0:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Voting time has ended for this candidate"
-                    })
-                    continue
-
-                # Get candidate_id from data (for grouped voting) or default to current candidate
-                candidate_id = data.get("candidate_id", current_cand["candidate"]["id"])
-
-                # For grouped voting, find the event_candidate_id for the selected candidate
-                event_candidate = db.query(EventCandidate).filter(
-                    EventCandidate.event_id == event.id,
-                    EventCandidate.candidate_id == candidate_id
-                ).first()
-
-                if not event_candidate:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Selected candidate not found in this event"
-                    })
-                    continue
-
-                event_candidate_id = event_candidate.id
-
-                # Check if already voted for this candidate
-                # Use both IP address AND device_id for better duplicate detection
-                if device_id:
-                    # If device_id is provided, check by IP + device_id combination
-                    existing_vote = db.query(Vote).filter(
-                        Vote.event_id == event.id,
-                        Vote.candidate_id == candidate_id,
-                        Vote.ip_address == client_ip,
-                        Vote.device_id == device_id
-                    ).first()
-                else:
-                    # Fallback to IP-only check (legacy behavior)
-                    existing_vote = db.query(Vote).filter(
-                        Vote.event_id == event.id,
-                        Vote.candidate_id == candidate_id,
-                        Vote.ip_address == client_ip
-                    ).first()
-
-                if existing_vote:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Siz allaqachon ovoz bergansiz (bu qurilmadan)"
-                    })
-                    continue
-
-                candidate_record = db.query(Candidate).filter(Candidate.id == candidate_id).first()
-
-                # Record vote
-                vote = Vote(
-                    event_id=event.id,
-                    event_candidate_id=event_candidate_id,
-                    candidate_id=candidate_id,
-                    ip_address=client_ip,
-                    device_id=device_id,
-                    nonce=nonce,
-                    vote_type=vote_type,
-                    timestamp=datetime.utcnow()
-                )
-                db.add(vote)
-
-                # Update participant count for this candidate
-                # Count unique participants (by IP+device_id combination)
-                participant_event_candidate = db.query(EventCandidate).filter(
-                    EventCandidate.event_id == event.id,
-                    EventCandidate.candidate_id == candidate_id
-                ).first()
-
-                if participant_event_candidate:
-                    # Count unique participants for this candidate
-                    # Use func.count(func.distinct()) for accurate counting
-                    from sqlalchemy import func
-                    if device_id:
-                        # Count unique (ip_address, device_id) pairs
-                        unique_participants = db.query(
-                            func.count(func.distinct(Vote.ip_address + '_' + func.coalesce(Vote.device_id, '')))
-                        ).filter(
-                            Vote.event_id == event.id,
-                            Vote.candidate_id == candidate_id
-                        ).scalar() or 0
-                    else:
-                        # Count unique ip_address
-                        unique_participants = db.query(
-                            func.count(func.distinct(Vote.ip_address))
-                        ).filter(
-                            Vote.event_id == event.id,
-                            Vote.candidate_id == candidate_id
-                        ).scalar() or 0
-
-                    participant_event_candidate.participant_count = unique_participants
-
-                auto_voted_candidate_ids: list[int] = []
-
-                # Auto-vote logic for grouped candidates
-                if candidate_record:
-                    # Get current event_candidate to check for group
-                    current_event_candidate = db.query(EventCandidate).filter(
-                        EventCandidate.event_id == event.id,
-                        EventCandidate.candidate_id == candidate_id
-                    ).first()
-
-                    # Only auto-vote for grouped candidates
-                    if current_event_candidate and current_event_candidate.candidate_group:
-                        # Get all candidates in the same group
-                        related_event_candidates = db.query(EventCandidate).options(
-                            joinedload(EventCandidate.candidate)
-                        ).filter(
-                            EventCandidate.event_id == event.id,
-                            EventCandidate.candidate_group == current_event_candidate.candidate_group
-                        ).all()
-
-                        # Determine auto-vote type based on user's vote
-                        if vote_type == "yes":
-                            # If "yes" for one candidate, others get "no"
-                            auto_vote_type = "no"
-                        elif vote_type == "neutral":
-                            # If "neutral", all other candidates also get "neutral"
-                            auto_vote_type = "neutral"
-                        else:
-                            # If "no", no auto-voting needed
-                            auto_vote_type = None
-
-                        # Auto-vote for other candidates in the group
-                        if auto_vote_type:
-                            for related in related_event_candidates:
-                                related_candidate = related.candidate
-                                if not related_candidate or related_candidate.id == candidate_id:
-                                    continue
-
-                                # Check with device_id if available
-                                if device_id:
-                                    existing_related_vote = db.query(Vote).filter(
-                                        Vote.event_id == event.id,
-                                        Vote.candidate_id == related_candidate.id,
-                                        Vote.ip_address == client_ip,
-                                        Vote.device_id == device_id
-                                    ).first()
-                                else:
-                                    existing_related_vote = db.query(Vote).filter(
-                                        Vote.event_id == event.id,
-                                        Vote.candidate_id == related_candidate.id,
-                                        Vote.ip_address == client_ip
-                                    ).first()
-
-                                if existing_related_vote:
-                                    continue
-
-                                auto_vote = Vote(
-                                    event_id=event.id,
-                                    event_candidate_id=related.id,
-                                    candidate_id=related.candidate_id,
-                                    ip_address=client_ip,
-                                    device_id=device_id,
-                                    nonce=f"{nonce}-{auto_vote_type}-{related.candidate_id}",
-                                    vote_type=auto_vote_type,
-                                    timestamp=datetime.utcnow()
-                                )
-                                db.add(auto_vote)
-                                auto_voted_candidate_ids.append(related.candidate_id)
-
-                                # Update participant count for auto-voted candidates
-                                from sqlalchemy import func
-                                if device_id:
-                                    unique_participants = db.query(
-                                        func.count(func.distinct(Vote.ip_address + '_' + func.coalesce(Vote.device_id, '')))
-                                    ).filter(
-                                        Vote.event_id == event.id,
-                                        Vote.candidate_id == related.candidate_id
-                                    ).scalar() or 0
-                                else:
-                                    unique_participants = db.query(
-                                        func.count(func.distinct(Vote.ip_address))
-                                    ).filter(
-                                        Vote.event_id == event.id,
-                                        Vote.candidate_id == related.candidate_id
-                                    ).scalar() or 0
-
-                                related.participant_count = unique_participants
-
-                db.commit()
-
-                db.expire_all()
-
-                # Send confirmation
-                await websocket.send_json({
-                    "type": "vote_confirmed",
-                    "vote_type": vote_type,
-                    "candidate_id": candidate_id,
-                    "which_position": candidate_position_value(candidate_record) if candidate_record else None,
-                    "auto_voted_candidates": auto_voted_candidate_ids
-                })
-
-                # Broadcast updated tally for current candidate
-                tally = get_candidate_vote_tally(db, event.id, candidate_id)
-                await manager.broadcast_vote(link, {
-                    "type": "tally_update",
-                    "data": tally
-                })
-
-                # Broadcast current candidate state to all voters
-                current_candidate = get_current_voting_candidate(db, event.id)
-                await manager.broadcast_vote(link, {
-                    "type": "current_candidate",
-                    "data": current_candidate
-                })
-
-                display_payload = build_display_update_payload(db, event)
-                if display_payload:
-                    await manager.broadcast_display(link, display_payload)
-
-    except WebSocketDisconnect:
-        if connected:
-            manager.disconnect_vote(websocket, link)
-    except Exception as e:
-        print(f"WebSocket error: {type(e).__name__}: {e}")
-        if connected:
-            manager.disconnect_vote(websocket, link)
-    finally:
-        try:
-            db.close()
-            # Properly close the generator
-            try:
-                next(db_gen)
-            except StopIteration:
-                pass
-        except Exception as e:
-            print(f"Error closing database session: {e}")
-
-
-@router.websocket("/ws/display/{link}")
-async def websocket_display_endpoint(websocket: WebSocket, link: str):
-    """WebSocket for display screen with pie chart results"""
-    db_gen = get_db()
-    db = next(db_gen)
-
-    try:
-        event = db.query(Event).filter(Event.link == link).first()
-        if not event:
-            await websocket.close(code=4004, reason="Event not found")
-            return
-
-        await manager.connect_display(websocket, link)
-        event_id = event.id
-
-        # Send initial state
-        await send_display_update(websocket, db, event_id)
-
-        while True:
-            # Wait for client message (keep-alive)
-            try:
-                message = await websocket.receive_text()
-                # Client requested update
-                if message == "update":
-                    await send_display_update(websocket, db, event_id)
-            except:
-                break
-
-    except WebSocketDisconnect:
-        manager.disconnect_display(websocket, link)
-    except Exception as e:
-        print(f"Display WebSocket error: {e}")
-        manager.disconnect_display(websocket, link)
-    finally:
-        try:
-            db.close()
-            # Properly close the generator
-            try:
-                next(db_gen)
-            except StopIteration:
-                pass
-        except Exception as e:
-            print(f"Error closing database session: {e}")
-
-
-async def send_display_update(websocket: WebSocket, db: Session, event_id: int):
-    """Send current display state to display screen"""
-    db.expire_all()
-    event = db.query(Event).filter(Event.id == event_id).first()
-    payload = build_display_update_payload(db, event)
-    if payload:
-        await websocket.send_json(payload)
+    return {
+        "yes": yes_count,
+        "no": no_count,
+        "neutral": neutral_count,
+        "total": yes_count + no_count + neutral_count
+    }
 
 
 def get_current_voting_candidate(db: Session, event_id: int):
@@ -579,75 +227,398 @@ def get_current_voting_candidate(db: Session, event_id: int):
     if not event:
         return None
 
-    timer_stub = {
-        "running": False,
-        "remaining_ms": 0,
-        "duration_sec": event.duration_sec,
-        "started_at": None,
-        "ends_at": None,
-        "ends_at_ts": None,
-    }
-
-    # Get all event candidates ordered
     event_candidates = db.query(EventCandidate).options(
         joinedload(EventCandidate.candidate)
     ).filter(
         EventCandidate.event_id == event_id
     ).order_by(EventCandidate.order).all()
 
-    if not event_candidates:
-        return {
-            "candidate": None,
-            "event_candidate_id": None,
-            "index": 0,
-            "total": 0,
-            "timer": timer_stub,
-            "related_candidates": []
-        }
+    total = len(event_candidates)
 
-    if event.current_candidate_index >= len(event_candidates):
-        return {
-            "candidate": None,
-            "event_candidate_id": None,
-            "index": event.current_candidate_index,
-            "total": len(event_candidates),
-            "timer": timer_stub,
-            "related_candidates": []
-        }
+    if total == 0:
+        return {"candidate": None, "timer": None, "index": 0, "total": 0, "related_candidates": []}
 
-    current_ec = event_candidates[event.current_candidate_index]
-    timer_info = compute_timer_info(event, current_ec)
+    idx = event.current_candidate_index
+    if idx < 0 or idx >= total:
+        return {"candidate": None, "timer": None, "index": idx, "total": total, "related_candidates": []}
+
+    current_ec = event_candidates[idx]
+    candidate = current_ec.candidate
+
+    candidate_data = {
+        "id": candidate.id,
+        "full_name": candidate.full_name,
+        "image": candidate.image,
+        "which_position": candidate_position_value(candidate),
+        "degree": candidate.degree,
+    } if candidate else None
+
+    timer = compute_timer_info(event, current_ec)
+
+    related_candidates = build_related_candidates(event_candidates, candidate, current_ec)
 
     return {
-        "candidate": {
-            "id": current_ec.candidate.id,
-            "full_name": current_ec.candidate.full_name,
-            "image": current_ec.candidate.image,
-            "which_position": candidate_position_value(current_ec.candidate),
-            "degree": current_ec.candidate.degree
-        },
-        "event_candidate_id": current_ec.id,
-        "index": event.current_candidate_index,
-        "total": len(event_candidates),
-        "timer": timer_info,
-        "related_candidates": build_related_candidates(event_candidates, current_ec.candidate, current_ec),
+        "candidate": candidate_data,
+        "timer": timer,
+        "index": idx,
+        "total": total,
+        "related_candidates": related_candidates,
     }
 
 
-def get_candidate_vote_tally(db: Session, event_id: int, candidate_id: int):
-    """Get vote tally for a candidate (yes/no/neutral)"""
-    votes = db.query(
-        Vote.vote_type,
-        func.count(Vote.id).label('count')
-    ).filter(
-        Vote.event_id == event_id,
-        Vote.candidate_id == candidate_id
-    ).group_by(Vote.vote_type).all()
+@router.websocket("/ws/vote/{link}")
+async def websocket_vote_endpoint(websocket: WebSocket, link: str):
+    """WebSocket for sequential yes/no/neutral voting"""
+    connected = False
+    event_id = None
 
-    result = {"yes": 0, "no": 0, "neutral": 0, "total": 0}
+    # Verify event and connect — use short-lived DB session
+    try:
+        db = SessionLocal()
+        try:
+            event = db.query(Event).filter(Event.link == link).first()
+            if not event:
+                await websocket.close(code=4004, reason="Event not found")
+                return
+            if event.status not in (EventStatus.active, EventStatus.finished):
+                await websocket.close(code=4003, reason="Event is not available")
+                return
+            event_id = event.id
+        finally:
+            db.close()
 
-    for vote_type, count in votes:
-        result[vote_type] = count
-        result["total"] += count
+        await manager.connect_vote(websocket, link)
+        connected = True
 
-    return result
+        # Send initial data
+        db = SessionLocal()
+        try:
+            current_candidate = get_current_voting_candidate(db, event_id)
+            await websocket.send_json({
+                "type": "current_candidate",
+                "data": current_candidate
+            })
+            if current_candidate and current_candidate.get("candidate"):
+                tally = get_candidate_vote_tally(db, event_id, current_candidate["candidate"]["id"])
+                await websocket.send_json({
+                    "type": "tally_update",
+                    "data": tally
+                })
+        finally:
+            db.close()
+
+        # Main loop — no DB session held open
+        while True:
+            try:
+                data = await websocket.receive_json()
+            except Exception as e:
+                print(f"Error receiving message: {e}")
+                break
+
+            # Handle ping-pong for connection health
+            if data.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
+
+            if data.get("type") == "cast_vote":
+                # Open DB session only for vote processing
+                db = SessionLocal()
+                try:
+                    await _process_vote(db, websocket, link, event_id, data)
+                finally:
+                    db.close()
+
+    except WebSocketDisconnect:
+        if connected:
+            manager.disconnect_vote(websocket, link)
+    except Exception as e:
+        print(f"WebSocket error: {type(e).__name__}: {e}")
+        if connected:
+            manager.disconnect_vote(websocket, link)
+
+
+async def _process_vote(db: Session, websocket: WebSocket, link: str, event_id: int, data: dict):
+    """Process a single vote — uses its own DB session."""
+    vote_type = data.get("vote_type")
+    nonce = data.get("nonce")
+    device_id = data.get("device_id")
+
+    if not vote_type or not nonce:
+        await websocket.send_json({
+            "type": "error",
+            "message": "Missing vote_type or nonce"
+        })
+        return
+
+    if vote_type not in ['yes', 'no', 'neutral']:
+        await websocket.send_json({
+            "type": "error",
+            "message": "Invalid vote_type. Must be 'yes', 'no', or 'neutral'"
+        })
+        return
+
+    client_ip = websocket.client.host if websocket.client else "unknown"
+
+    current_cand = get_current_voting_candidate(db, event_id)
+    if not current_cand or not current_cand.get("candidate"):
+        await websocket.send_json({
+            "type": "error",
+            "message": "No active candidate for voting"
+        })
+        return
+
+    timer_info = current_cand.get("timer") or {}
+    if not timer_info.get("running"):
+        await websocket.send_json({
+            "type": "error",
+            "message": "Voting has not started for this candidate yet"
+        })
+        return
+
+    if timer_info.get("remaining_ms", 0) <= 0:
+        await websocket.send_json({
+            "type": "error",
+            "message": "Voting time has ended for this candidate"
+        })
+        return
+
+    candidate_id = data.get("candidate_id", current_cand["candidate"]["id"])
+
+    event_candidate = db.query(EventCandidate).filter(
+        EventCandidate.event_id == event_id,
+        EventCandidate.candidate_id == candidate_id
+    ).first()
+
+    if not event_candidate:
+        await websocket.send_json({
+            "type": "error",
+            "message": "Selected candidate not found in this event"
+        })
+        return
+
+    event_candidate_id = event_candidate.id
+
+    # Check if already voted
+    if device_id:
+        existing_vote = db.query(Vote).filter(
+            Vote.event_id == event_id,
+            Vote.candidate_id == candidate_id,
+            Vote.ip_address == client_ip,
+            Vote.device_id == device_id
+        ).first()
+    else:
+        existing_vote = db.query(Vote).filter(
+            Vote.event_id == event_id,
+            Vote.candidate_id == candidate_id,
+            Vote.ip_address == client_ip
+        ).first()
+
+    if existing_vote:
+        await websocket.send_json({
+            "type": "error",
+            "message": "Siz allaqachon ovoz bergansiz (bu qurilmadan)"
+        })
+        return
+
+    candidate_record = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+
+    # Record vote
+    vote = Vote(
+        event_id=event_id,
+        event_candidate_id=event_candidate_id,
+        candidate_id=candidate_id,
+        ip_address=client_ip,
+        device_id=device_id,
+        nonce=nonce,
+        vote_type=vote_type,
+        timestamp=datetime.utcnow()
+    )
+    db.add(vote)
+
+    # Update participant count
+    participant_event_candidate = db.query(EventCandidate).filter(
+        EventCandidate.event_id == event_id,
+        EventCandidate.candidate_id == candidate_id
+    ).first()
+
+    if participant_event_candidate:
+        if device_id:
+            unique_participants = db.query(
+                func.count(func.distinct(Vote.ip_address + '_' + func.coalesce(Vote.device_id, '')))
+            ).filter(
+                Vote.event_id == event_id,
+                Vote.candidate_id == candidate_id
+            ).scalar() or 0
+        else:
+            unique_participants = db.query(
+                func.count(func.distinct(Vote.ip_address))
+            ).filter(
+                Vote.event_id == event_id,
+                Vote.candidate_id == candidate_id
+            ).scalar() or 0
+
+        participant_event_candidate.participant_count = unique_participants
+
+    auto_voted_candidate_ids: list[int] = []
+
+    # Auto-vote logic for grouped candidates
+    if candidate_record:
+        current_event_candidate = db.query(EventCandidate).filter(
+            EventCandidate.event_id == event_id,
+            EventCandidate.candidate_id == candidate_id
+        ).first()
+
+        if current_event_candidate and current_event_candidate.candidate_group:
+            related_event_candidates = db.query(EventCandidate).options(
+                joinedload(EventCandidate.candidate)
+            ).filter(
+                EventCandidate.event_id == event_id,
+                EventCandidate.candidate_group == current_event_candidate.candidate_group
+            ).all()
+
+            if vote_type == "yes":
+                auto_vote_type = "no"
+            elif vote_type == "neutral":
+                auto_vote_type = "neutral"
+            else:
+                auto_vote_type = None
+
+            if auto_vote_type:
+                for related in related_event_candidates:
+                    related_candidate = related.candidate
+                    if not related_candidate or related_candidate.id == candidate_id:
+                        continue
+
+                    if device_id:
+                        existing_related_vote = db.query(Vote).filter(
+                            Vote.event_id == event_id,
+                            Vote.candidate_id == related_candidate.id,
+                            Vote.ip_address == client_ip,
+                            Vote.device_id == device_id
+                        ).first()
+                    else:
+                        existing_related_vote = db.query(Vote).filter(
+                            Vote.event_id == event_id,
+                            Vote.candidate_id == related_candidate.id,
+                            Vote.ip_address == client_ip
+                        ).first()
+
+                    if existing_related_vote:
+                        continue
+
+                    auto_vote = Vote(
+                        event_id=event_id,
+                        event_candidate_id=related.id,
+                        candidate_id=related.candidate_id,
+                        ip_address=client_ip,
+                        device_id=device_id,
+                        nonce=f"{nonce}-{auto_vote_type}-{related.candidate_id}",
+                        vote_type=auto_vote_type,
+                        timestamp=datetime.utcnow()
+                    )
+                    db.add(auto_vote)
+                    auto_voted_candidate_ids.append(related.candidate_id)
+
+                    if device_id:
+                        unique_participants = db.query(
+                            func.count(func.distinct(Vote.ip_address + '_' + func.coalesce(Vote.device_id, '')))
+                        ).filter(
+                            Vote.event_id == event_id,
+                            Vote.candidate_id == related.candidate_id
+                        ).scalar() or 0
+                    else:
+                        unique_participants = db.query(
+                            func.count(func.distinct(Vote.ip_address))
+                        ).filter(
+                            Vote.event_id == event_id,
+                            Vote.candidate_id == related.candidate_id
+                        ).scalar() or 0
+
+                    related.participant_count = unique_participants
+
+    db.commit()
+
+    # Send confirmation
+    await websocket.send_json({
+        "type": "vote_confirmed",
+        "vote_type": vote_type,
+        "candidate_id": candidate_id,
+        "which_position": candidate_position_value(candidate_record) if candidate_record else None,
+        "auto_voted_candidates": auto_voted_candidate_ids
+    })
+
+    # Broadcast updated tally
+    tally = get_candidate_vote_tally(db, event_id, candidate_id)
+    await manager.broadcast_vote(link, {
+        "type": "tally_update",
+        "data": tally
+    })
+
+    # Broadcast current candidate state
+    current_candidate = get_current_voting_candidate(db, event_id)
+    await manager.broadcast_vote(link, {
+        "type": "current_candidate",
+        "data": current_candidate
+    })
+
+    event = db.query(Event).filter(Event.id == event_id).first()
+    display_payload = build_display_update_payload(db, event)
+    if display_payload:
+        await manager.broadcast_display(link, display_payload)
+
+
+@router.websocket("/ws/display/{link}")
+async def websocket_display_endpoint(websocket: WebSocket, link: str):
+    """WebSocket for display screen with pie chart results"""
+    connected = False
+
+    try:
+        # Verify event — short-lived DB session
+        db = SessionLocal()
+        try:
+            event = db.query(Event).filter(Event.link == link).first()
+            if not event:
+                await websocket.close(code=4004, reason="Event not found")
+                return
+            event_id = event.id
+        finally:
+            db.close()
+
+        await manager.connect_display(websocket, link)
+        connected = True
+
+        # Send initial state
+        db = SessionLocal()
+        try:
+            await send_display_update(websocket, db, event_id)
+        finally:
+            db.close()
+
+        while True:
+            try:
+                message = await websocket.receive_text()
+                if message == "update":
+                    db = SessionLocal()
+                    try:
+                        await send_display_update(websocket, db, event_id)
+                    finally:
+                        db.close()
+            except:
+                break
+
+    except WebSocketDisconnect:
+        if connected:
+            manager.disconnect_display(websocket, link)
+    except Exception as e:
+        print(f"Display WebSocket error: {e}")
+        if connected:
+            manager.disconnect_display(websocket, link)
+
+
+async def send_display_update(websocket: WebSocket, db: Session, event_id: int):
+    """Send current display state to display screen"""
+    db.expire_all()
+    event = db.query(Event).filter(Event.id == event_id).first()
+    payload = build_display_update_payload(db, event)
+    if payload:
+        await websocket.send_json(payload)

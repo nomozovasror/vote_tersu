@@ -329,6 +329,18 @@ export default function VotePage() {
           // Update event status to finished
           setEvent((prev) => prev ? { ...prev, status: EventStatus.FINISHED } : prev);
         }
+      } else if (data.type === 'timer_expired') {
+        // Server confirmed timer has ended — force local countdown to zero
+        setCountdownMs(0);
+        countdownTarget.current = null;
+        // Update timer state in currentCandidate so UI shows "vaqt tugadi"
+        setCurrentCandidate((prev) => {
+          if (!prev || !prev.timer) return prev;
+          return {
+            ...prev,
+            timer: { ...prev.timer, running: false, remaining_ms: 0 },
+          };
+        });
       } else if (data.type === 'vote_confirmed') {
         setHasVoted(true);
         // Track that we voted for this candidate
@@ -503,39 +515,156 @@ export default function VotePage() {
     );
   };
 
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('');
+  const syncMessageTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showSyncMessage = (msg: string) => {
+    if (syncMessageTimer.current) clearTimeout(syncMessageTimer.current);
+    setSyncMessage(msg);
+    syncMessageTimer.current = setTimeout(() => setSyncMessage(''), 4000);
+  };
+
+  const syncCandidateFromApi = async () => {
+    if (!event?.id) return;
+    setSyncLoading(true);
+    setSyncMessage('');
+    try {
+      const response = await api.get(`/event-management/${event.id}/current-candidate`);
+      const data = response.data;
+      if (data?.candidate && data?.timer?.started_at) {
+        const incomingId = data.candidate.id;
+        const candidateChanged = previousCandidateId.current !== incomingId;
+        if (candidateChanged) {
+          const alreadyVoted = votedCandidates.current.has(incomingId);
+          setHasVoted(alreadyVoted);
+          setSelectedCandidateId(null);
+          if (!alreadyVoted) nonce.current = generateUUID();
+          previousCandidateId.current = incomingId;
+        }
+        setCurrentCandidate(data);
+        // Update local countdown from API data
+        if (data.timer?.running && data.timer?.remaining_ms > 0) {
+          const targetMs = Date.now() + data.timer.remaining_ms;
+          countdownTarget.current = targetMs;
+          setCountdownMs(data.timer.remaining_ms);
+        } else {
+          countdownTarget.current = null;
+          setCountdownMs(0);
+        }
+        if (!candidateChanged) {
+          if (data.timer?.running && data.timer?.remaining_ms > 0) {
+            if (!syncMessage) {
+              showSyncMessage('Ovoz berish hali davom etmoqda');
+            }
+          } else {
+            showSyncMessage('Hozircha yangi nomzod belgilanmagan');
+          }
+        }
+      } else if (data?.candidate && !data?.timer?.started_at) {
+        showSyncMessage('Nomzod taqdim etilmoqda, ovoz berish hali ochilmagan');
+      } else {
+        showSyncMessage('Hozircha yangi nomzod belgilanmagan');
+      }
+    } catch {
+      showSyncMessage('Internet aloqasini tekshiring');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
   const retryFetchResults = () => {
     if (!event?.id) return;
     resultsFetched.current = false;
     fetchResults(event.id);
   };
 
+  // Toast notification for sync messages
+  const SyncToast = () => {
+    if (!syncMessage) return null;
+    return (
+      <div className="fixed top-6 left-1/2 z-50 animate-[fadeSlideDown_0.3s_ease-out_forwards]" style={{ transform: 'translateX(-50%)' }}>
+        <div className="bg-gray-900 text-white px-7 py-4 rounded-2xl shadow-2xl flex items-center gap-3 text-base md:text-lg font-semibold">
+          <svg className="w-6 h-6 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          {syncMessage}
+        </div>
+      </div>
+    );
+  };
+
+  // Sync button rendered separately below card
+  const SyncButtonBlock = () => (
+    <button
+      onClick={syncCandidateFromApi}
+      disabled={syncLoading}
+      className="w-full bg-white border border-gray-200 text-gray-700 py-3.5 rounded-2xl font-semibold text-base transition-all hover:bg-gray-50 hover:shadow-md active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+    >
+      {syncLoading ? (
+        <>
+          <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Tekshirilmoqda...
+        </>
+      ) : (
+        <>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          </svg>
+          Keyingi kandidat
+        </>
+      )}
+    </button>
+  );
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
-        <ConnectionStatusIndicator />
-        <div className="text-xl">Yuklanmoqda...</div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+        <div className="text-center">
+          <div className="relative w-16 h-16 mx-auto mb-4">
+            <div className="absolute inset-0 rounded-full border-4 border-blue-100"></div>
+            <div className="absolute inset-0 rounded-full border-4 border-blue-500 border-t-transparent animate-spin"></div>
+          </div>
+          <p className="text-lg text-gray-500 font-medium">Yuklanmoqda...</p>
+        </div>
       </div>
     );
   }
 
   if (error || !event) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50">
-        <ConnectionStatusIndicator />
-        <div className="text-xl text-red-600">{error || 'Event topilmadi'}</div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-red-50 to-rose-100 px-4">
+        <div className="text-center bg-white rounded-3xl shadow-xl p-10 max-w-sm border border-red-100">
+          <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
+            <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          </div>
+          <p className="text-lg font-semibold text-gray-800 mb-2">{error || 'Tanlov topilmadi'}</p>
+          <p className="text-sm text-gray-500">Havola noto'g'ri yoki tanlov o'chirilgan</p>
+        </div>
       </div>
     );
   }
 
   if (event.status === EventStatus.PENDING) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 px-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-amber-50 to-yellow-100 px-4">
         <ConnectionStatusIndicator />
-        <div className="text-center">
-          <div className="text-2xl md:text-3xl font-bold text-yellow-600 mb-4">
-            Bu tanlov hozir faol emas
+        <SyncToast />
+        <div className="w-full max-w-sm space-y-3">
+          <div className="text-center bg-white rounded-3xl shadow-xl p-10 border border-amber-100">
+            <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
+              <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Tanlov tayyorlanmoqda</h2>
+            <p className="text-sm text-gray-500">Ovoz berish tez orada boshlanadi. Iltimos, sahifani yopmasdan kuting.</p>
           </div>
-          <p className="text-gray-600">Admin tomonidan tanlov boshlanishini kuting</p>
+          <SyncButtonBlock />
         </div>
       </div>
     );
@@ -644,18 +773,30 @@ export default function VotePage() {
   // Don't show candidate info until timer starts
   if (hasCandidate && !timerStarted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 px-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 px-4">
         <ConnectionStatusIndicator />
-        <div className="text-center bg-white rounded-2xl shadow-2xl p-12 max-w-md">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
-            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+        <SyncToast />
+        <div className="w-full max-w-sm space-y-3">
+          <div className="text-center bg-white rounded-3xl shadow-xl p-10 border border-blue-100">
+            <div className="relative w-20 h-20 mx-auto mb-6">
+              <div className="absolute inset-0 rounded-full border-4 border-blue-100"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-blue-500 border-t-transparent animate-spin" style={{ animationDuration: '2s' }}></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Nomzod taqdim etilmoqda</h2>
+            <p className="text-sm text-gray-500 mb-1">
+              {currentCandidate!.index + 1}-nomzod ({currentCandidate!.total} tadan)
+            </p>
+            <p className="text-sm text-gray-400">
+              Ovoz berish uchun vaqt berilishini kuting
+            </p>
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-3">Navbatdagi kandidat</h2>
-          <p className="text-sm text-gray-500">
-            Admin tomonidan timer start qilinishini kuting
-          </p>
+          <SyncButtonBlock />
         </div>
       </div>
     );
@@ -677,11 +818,27 @@ export default function VotePage() {
     }
 
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 px-4">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 px-4">
         <ConnectionStatusIndicator />
-        <div className="text-center">
-          <div className="text-2xl md:text-3xl font-bold mb-4">Ovoz berish kutilmoqda...</div>
-          <p className="text-gray-600">Admin tomonidan kandidat tanlanishini kuting</p>
+        <SyncToast />
+        <div className="w-full max-w-sm space-y-3">
+          <div className="text-center bg-white rounded-3xl shadow-xl p-10 border border-blue-100">
+            <div className="relative w-20 h-20 mx-auto mb-6">
+              <div className="absolute inset-0 rounded-full border-4 border-blue-100"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-blue-500 border-t-transparent animate-spin" style={{ animationDuration: '2s' }}></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+            </div>
+
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Navbatdagi nomzod tayyor emas</h2>
+            <p className="text-sm text-gray-500">
+              Yangi nomzod taqdim etilishini kuting. Sahifani yopmasdan turing.
+            </p>
+          </div>
+          <SyncButtonBlock />
         </div>
       </div>
     );
@@ -689,7 +846,7 @@ export default function VotePage() {
 
   // Only access candidate data after timer has started (we know it exists because hasCandidate is true)
   const candidate = currentCandidate.candidate!;
-  const votingActive = !!timer?.running && timer.remaining_ms > 0;
+  const votingActive = !!timer?.running && countdownMs > 0;
   const remainingSeconds = Math.max(0, Math.ceil(countdownMs / 1000));
   const progressPercent = timer?.duration_sec
     ? Math.max(0, Math.min(100, (countdownMs / (timer.duration_sec * 1000)) * 100))
@@ -700,6 +857,7 @@ export default function VotePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 py-4 md:py-8 px-4">
       <ConnectionStatusIndicator />
+      <SyncToast />
       <div className="max-w-2xl mx-auto">
         {/* Event Info */}
         <div className="bg-white rounded-xl shadow-xl p-4 md:p-6 mb-4 md:mb-6">
@@ -753,7 +911,7 @@ export default function VotePage() {
                 {candidate.which_position || 'Lavozim'}
               </h2>
               <p className="text-center text-gray-600 mb-4">
-                Quyidagi nomzodlardan bittasini tanlang
+                Nomzodlardan faqat bittasini tanlashingiz mumkin
               </p>
             </div>
           )}
@@ -766,7 +924,7 @@ export default function VotePage() {
                     {remainingSeconds}
                   </div>
                   <p className="text-sm md:text-base font-semibold">
-                    {votingActive ? 'Ovoz berish davom etmoqda' : 'Bu kandidat uchun vaqt tugadi'}
+                    {votingActive ? 'Ovoz berish uchun qolgan vaqt' : 'Bu nomzod uchun ovoz berish yopildi'}
                   </p>
                 </div>
                 {timer?.duration_sec ? (
@@ -787,13 +945,21 @@ export default function VotePage() {
 
           {/* Voting Buttons */}
           {hasVoted ? (
-            <div className="bg-green-100 border-2 border-green-500 rounded-xl p-6 md:p-8 text-center">
-              <p className="text-xl md:text-3xl font-bold text-green-800 mb-2">
-                ✓ Ovozingiz qabul qilindi!
-              </p>
-              <p className="text-green-700 text-sm md:text-base">
-                Keyingi kandidatni kutib turing...
-              </p>
+            <div className="space-y-3">
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 md:p-8 text-center">
+                <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <p className="text-lg md:text-xl font-bold text-gray-800 mb-1">
+                  Ovozingiz muvaffaqiyatli saqlandi
+                </p>
+                <p className="text-sm text-gray-500">
+                  Navbatdagi nomzod avtomatik ko'rsatiladi
+                </p>
+              </div>
+              <SyncButtonBlock />
             </div>
           ) : votingActive ? (
             hasAlternatives && relatedCandidates.length > 1 ? (
@@ -840,7 +1006,7 @@ export default function VotePage() {
                 </div>
                 <div className="mt-4 bg-yellow-50 border border-yellow-300 rounded-lg p-3">
                   <p className="text-center text-sm text-yellow-800 font-medium">
-                    ⚠️ Tanlangan nomzod "Ha" ovoz oladi, qolganlari "Yo'q" ovoz oladi
+                    Siz tanlagan nomzodga "Ha", qolganlariga avtomatik "Yo'q" ovozi beriladi
                   </p>
                 </div>
 
@@ -903,22 +1069,38 @@ export default function VotePage() {
               </div>
             )
           ) : timerStarted ? (
-            <div className="bg-yellow-100 border-2 border-yellow-400 rounded-xl p-6 md:p-8 text-center">
-              <p className="text-xl md:text-2xl font-semibold text-yellow-800 mb-2">
-                Vaqt tugadi
-              </p>
-              <p className="text-yellow-700 text-sm md:text-base">
-                Admin keyingi kandidatni ishga tushirguncha kuting
-              </p>
+            <div className="space-y-3">
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 md:p-8 text-center">
+                <div className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-7 h-7 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <p className="text-lg md:text-xl font-semibold text-gray-800 mb-1">
+                  Bu nomzod uchun vaqt tugadi
+                </p>
+                <p className="text-sm text-gray-500">
+                  Keyingi nomzod tez orada ko'rsatiladi
+                </p>
+              </div>
+              <SyncButtonBlock />
             </div>
           ) : (
-            <div className="bg-blue-100 border-2 border-blue-400 rounded-xl p-6 md:p-8 text-center">
-              <p className="text-xl md:text-2xl font-semibold text-blue-800 mb-2">
-                Ovoz berish hali boshlanmadi
-              </p>
-              <p className="text-blue-700 text-sm md:text-base">
-                Admin "Timer Start" tugmasini bosishini kuting
-              </p>
+            <div className="space-y-3">
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6 md:p-8 text-center">
+                <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-7 h-7 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
+                </div>
+                <p className="text-lg md:text-xl font-semibold text-gray-800 mb-1">
+                  Ovoz berish hali ochilmagan
+                </p>
+                <p className="text-sm text-gray-500">
+                  Nomzod taqdim etilgandan so'ng ovoz berish boshlanadi
+                </p>
+              </div>
+              <SyncButtonBlock />
             </div>
           )}
         </div>

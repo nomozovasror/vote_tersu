@@ -1,4 +1,28 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: ${CONTAINER_PREFIX:-voting}_db
+    command: postgres -c max_connections=300 -c shared_buffers=256MB -c work_mem=4MB
+    environment:
+      POSTGRES_DB: voting
+      POSTGRES_USER: ${POSTGRES_USER:-voting}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-voting_secret}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - voting-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-voting}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   api:
     build:
       context: ./api
@@ -8,27 +32,35 @@ services:
       - "${API_PORT:-2014}:8000"
     volumes:
       - ./data:/app/data
-      - ./api/.env:/app/.env:ro
     environment:
-      - DATABASE_URL=sqlite:///./data/voting.db
-      # NOTE: WebSocket requires single worker for in-memory broadcast
-      # Multi-worker requires Redis pub/sub or sticky sessions
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-voting}:${POSTGRES_PASSWORD:-voting_secret}@db:5432/voting
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - ALGORITHM=${ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      - EXTERNAL_API_URL=${EXTERNAL_API_URL:-https://student.tersu.uz/rest/v1/data/employee-list}
+      - EXTERNAL_API_TOKEN=${EXTERNAL_API_TOKEN:-}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - SERVER_HOST=${SERVER_HOST:-localhost}
+      - API_PORT=${API_PORT:-2014}
+      - WEB_PORT=${WEB_PORT:-2013}
+      - FRONTEND_URL=http://${SERVER_HOST:-localhost}:${WEB_PORT:-2013}
+      - BACKEND_URL=http://${SERVER_HOST:-localhost}:${API_PORT:-2014}
       - WEB_CONCURRENCY=1
       - MAX_WORKERS=1
       - WORKER_CLASS=uvicorn.workers.UvicornWorker
       - WORKER_CONNECTIONS=5000
       - KEEPALIVE=120
-      # WebSocket connection limits (optimized for 200+ users)
       - MAX_CONNECTIONS_PER_EVENT=${MAX_CONNECTIONS_PER_EVENT:-1000}
       - MAX_TOTAL_CONNECTIONS=${MAX_TOTAL_CONNECTIONS:-5000}
-    env_file:
-      - ./api/.env
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
-    # Resource limits for production
     mem_limit: 2g
     memswap_limit: 2g
     cpus: 2.0
@@ -51,7 +83,7 @@ services:
       context: ./web
       dockerfile: Dockerfile
       args:
-        - VITE_API_URL=${VITE_API_URL:-http://localhost:2014}
+        - VITE_API_URL=http://${SERVER_HOST:-localhost}:${API_PORT:-2014}
         - VITE_UNIVERSITY_NAME=${UNIVERSITY_NAME:-University}
         - VITE_UNIVERSITY_SHORT_NAME=${UNIVERSITY_SHORT_NAME:-UNI}
     container_name: ${CONTAINER_PREFIX:-voting}_web
@@ -80,5 +112,5 @@ networks:
     driver: bridge
 
 volumes:
-  data:
+  pgdata:
     driver: local

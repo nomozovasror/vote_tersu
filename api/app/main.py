@@ -17,30 +17,32 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware - Allow all origins for development/production flexibility
+# CORS middleware - origins derived from SERVER_HOST, API_PORT, WEB_PORT
+_host = settings.SERVER_HOST
+_api_port = settings.API_PORT
+_web_port = settings.WEB_PORT
+
+_cors_origins = [
+    settings.FRONTEND_URL,
+    settings.BACKEND_URL,
+    # localhost for dev
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
+# Add SERVER_HOST origins (http + https, both ports)
+for scheme in ("http", "https"):
+    for port in (_api_port, _web_port):
+        _cors_origins.append(f"{scheme}://{_host}:{port}")
+    for host in ("localhost", "127.0.0.1"):
+        for port in (_api_port, _web_port):
+            _cors_origins.append(f"{scheme}://{host}:{port}")
+
+# Deduplicate
+_cors_origins = list(dict.fromkeys(_cors_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        settings.FRONTEND_URL,
-        "http://localhost:2011",
-        "http://localhost:2012",
-        "http://localhost:2013",
-        "http://localhost:2014",
-        "http://127.0.0.1:2011",
-        "http://127.0.0.1:2012",
-        "http://127.0.0.1:2013",
-        "http://127.0.0.1:2014",
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://213.230.97.43:2011",
-        "http://213.230.97.43:2012",
-        "http://213.230.97.43:2013",
-        "http://213.230.97.43:2014",
-        "https://213.230.97.43:2011",
-        "https://213.230.97.43:2012",
-        "https://213.230.97.43:2013",
-        "https://213.230.97.43:2014",
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

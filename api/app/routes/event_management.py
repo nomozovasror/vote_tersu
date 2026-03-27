@@ -131,6 +131,9 @@ async def set_current_candidate(
     if event.status == EventStatus.finished:
         event.status = EventStatus.active
 
+    # Cancel any running timer
+    manager.cancel_timer(event.link)
+
     # Reset display state until the timer is started again
     display_state = db.query(DisplayState).filter(DisplayState.event_id == event_id).first()
     if display_state:
@@ -266,6 +269,9 @@ async def move_to_next_candidate(
         event.status = EventStatus.finished
         event.current_candidate_index = total_candidates  # prevent out-of-range lookups
 
+    # Cancel any running timer
+    manager.cancel_timer(event.link)
+
     # Reset display state until the timer is started again
     display_state = db.query(DisplayState).filter(DisplayState.event_id == event_id).first()
     if display_state:
@@ -369,21 +375,60 @@ async def start_candidate_timer(
     db.commit()
     db.refresh(event)
 
+    event_link = event.link
+
     current_candidate = get_current_voting_candidate(db, event_id)
-    await manager.broadcast_vote(event.link, {
+    await manager.broadcast_vote(event_link, {
         "type": "current_candidate",
         "data": current_candidate
     })
 
     if current_candidate and current_candidate.get("candidate"):
         tally = get_candidate_vote_tally(db, event.id, current_candidate["candidate"]["id"])
-        await manager.broadcast_vote(event.link, {
+        await manager.broadcast_vote(event_link, {
             "type": "tally_update",
             "data": tally
         })
 
     display_payload = build_display_update_payload(db, event)
-    await manager.broadcast_display(event.link, display_payload)
+    await manager.broadcast_display(event_link, display_payload)
+
+    # Schedule server-side timer expiry
+    async def on_timer_expired():
+        """Broadcast timer_expired to all clients when voting time ends."""
+        from ..core.database import SessionLocal
+        timer_db = SessionLocal()
+        try:
+            ev = timer_db.query(Event).filter(Event.id == event_id).first()
+            if not ev or ev.status != EventStatus.active:
+                return
+
+            # Re-check that the timer actually expired (wasn't restarted)
+            ecs = timer_db.query(EventCandidate).filter(
+                EventCandidate.event_id == event_id
+            ).order_by(EventCandidate.order).all()
+            if ev.current_candidate_index >= len(ecs):
+                return
+            ec = ecs[ev.current_candidate_index]
+            if ec.timer_started_at != now:
+                # Timer was restarted, this expiry is stale
+                return
+
+            # Broadcast timer_expired to vote clients
+            await manager.broadcast_vote(event_link, {
+                "type": "timer_expired",
+                "candidate_id": ec.candidate_id,
+            })
+
+            # Refresh display with updated timer state
+            ev_fresh = timer_db.query(Event).filter(Event.id == event_id).first()
+            if ev_fresh:
+                dp = build_display_update_payload(timer_db, ev_fresh)
+                await manager.broadcast_display(event_link, dp)
+        finally:
+            timer_db.close()
+
+    manager.schedule_timer_expiry(event_link, duration_sec, on_timer_expired)
 
     return {
         "message": "Timer started",

@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Optional, Callable, Awaitable
 from fastapi import WebSocket
 import json
 import asyncio
@@ -17,6 +17,40 @@ class ConnectionManager:
         # Connection limits from environment variables
         self.max_connections_per_event = int(os.getenv("MAX_CONNECTIONS_PER_EVENT", "500"))
         self.max_total_connections = int(os.getenv("MAX_TOTAL_CONNECTIONS", "2000"))
+        # Timer tasks: event_link -> asyncio.Task
+        self._timer_tasks: Dict[str, asyncio.Task] = {}
+
+    def schedule_timer_expiry(
+        self,
+        event_link: str,
+        duration_sec: float,
+        on_expire: Callable[[], Awaitable[None]],
+    ):
+        """Schedule a background task that fires when the voting timer expires."""
+        # Cancel any existing timer for this event
+        self.cancel_timer(event_link)
+
+        async def _wait_and_fire():
+            try:
+                await asyncio.sleep(duration_sec)
+                await on_expire()
+            except asyncio.CancelledError:
+                logger.info(f"Timer cancelled for {event_link}")
+            except Exception as e:
+                logger.error(f"Timer expiry error for {event_link}: {e}")
+            finally:
+                self._timer_tasks.pop(event_link, None)
+
+        task = asyncio.create_task(_wait_and_fire())
+        self._timer_tasks[event_link] = task
+        logger.info(f"Timer scheduled for {event_link}: {duration_sec}s")
+
+    def cancel_timer(self, event_link: str):
+        """Cancel a running timer for an event."""
+        task = self._timer_tasks.pop(event_link, None)
+        if task and not task.done():
+            task.cancel()
+            logger.info(f"Timer cancelled for {event_link}")
 
     def get_total_vote_connections(self) -> int:
         """Get total number of active vote connections."""
@@ -71,27 +105,32 @@ class ConnectionManager:
             return
 
         dead_connections = []
-        connections = self.active_connections[event_link].copy()  # Copy to avoid modification during iteration
+        connections = self.active_connections[event_link].copy()
 
-        # Use asyncio.gather for concurrent sending with timeout
-        async def send_with_timeout(connection: WebSocket):
-            try:
-                await asyncio.wait_for(connection.send_json(message), timeout=5.0)
-                return None
-            except asyncio.TimeoutError:
-                logger.warning(f"Timeout sending to connection in {event_link}")
-                return connection
-            except Exception as e:
-                logger.debug(f"Error sending to connection in {event_link}: {type(e).__name__}")
-                return connection
+        # Serialize message once instead of per-connection
+        message_text = json.dumps(message)
 
-        # Send to all connections concurrently
-        results = await asyncio.gather(*[send_with_timeout(conn) for conn in connections], return_exceptions=True)
+        # Send in batches to avoid blocking event loop
+        batch_size = 50
+        for i in range(0, len(connections), batch_size):
+            batch = connections[i:i + batch_size]
 
-        # Collect dead connections
-        for result in results:
-            if isinstance(result, WebSocket):
-                dead_connections.append(result)
+            async def send_one(conn: WebSocket):
+                try:
+                    await asyncio.wait_for(conn.send_text(message_text), timeout=5.0)
+                    return None
+                except Exception:
+                    return conn
+
+            results = await asyncio.gather(*[send_one(c) for c in batch], return_exceptions=True)
+
+            for result in results:
+                if isinstance(result, WebSocket):
+                    dead_connections.append(result)
+
+            # Yield control to event loop between batches
+            if i + batch_size < len(connections):
+                await asyncio.sleep(0)
 
         # Remove dead connections
         for dead in dead_connections:
@@ -131,27 +170,29 @@ class ConnectionManager:
             return
 
         dead_connections = []
-        connections = self.display_connections[event_link].copy()  # Copy to avoid modification during iteration
+        connections = self.display_connections[event_link].copy()
 
-        # Use asyncio.gather for concurrent sending with timeout
-        async def send_with_timeout(connection: WebSocket):
-            try:
-                await asyncio.wait_for(connection.send_json(message), timeout=5.0)
-                return None
-            except asyncio.TimeoutError:
-                logger.warning(f"Timeout sending to display connection in {event_link}")
-                return connection
-            except Exception as e:
-                logger.debug(f"Error sending to display connection in {event_link}: {type(e).__name__}")
-                return connection
+        message_text = json.dumps(message)
 
-        # Send to all connections concurrently
-        results = await asyncio.gather(*[send_with_timeout(conn) for conn in connections], return_exceptions=True)
+        batch_size = 50
+        for i in range(0, len(connections), batch_size):
+            batch = connections[i:i + batch_size]
 
-        # Collect dead connections
-        for result in results:
-            if isinstance(result, WebSocket):
-                dead_connections.append(result)
+            async def send_one(conn: WebSocket):
+                try:
+                    await asyncio.wait_for(conn.send_text(message_text), timeout=5.0)
+                    return None
+                except Exception:
+                    return conn
+
+            results = await asyncio.gather(*[send_one(c) for c in batch], return_exceptions=True)
+
+            for result in results:
+                if isinstance(result, WebSocket):
+                    dead_connections.append(result)
+
+            if i + batch_size < len(connections):
+                await asyncio.sleep(0)
 
         # Remove dead connections
         for dead in dead_connections:

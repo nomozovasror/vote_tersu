@@ -139,6 +139,10 @@ def stop_event(
             detail=f"Event is not active"
         )
 
+    # Cancel any running timer
+    from ..services.websocket_manager import manager
+    manager.cancel_timer(event.link)
+
     event.status = EventStatus.finished
     event.end_time = datetime.utcnow()
     db.commit()

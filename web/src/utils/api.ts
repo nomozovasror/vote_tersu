@@ -4,12 +4,12 @@ import axios from 'axios';
 function getApiBaseUrl(): string {
   // 1. In production, always use the same host and port (proxied by Nginx)
   if (import.meta.env.PROD) {
-    return window.location.origin;
+    return window.location.origin.replace(/\/$/, '');
   }
 
   // 2. Use environment variable if set (mostly for development)
   if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
+    return import.meta.env.VITE_API_URL.replace(/\/$/, '');
   }
 
   // 3. Default for development
@@ -25,8 +25,14 @@ const api = axios.create({
   },
 });
 
-// Add token to requests
+// Interceptor to clean up URLs: ensure no leading slash in request URL
+// and ensure baseURL doesn't have a trailing slash.
+// This prevents Axios from treating the URL as absolute and dropping the port.
 api.interceptors.request.use((config) => {
+  if (config.url && config.url.startsWith('/')) {
+    config.url = config.url.substring(1);
+  }
+  
   const token = localStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;

@@ -22,7 +22,7 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     try {
-      const eventsRes = await api.get('/events');
+      const eventsRes = await api.get('events');
       setEvents(eventsRes.data);
     } catch (error: any) {
       if (error.response?.status === 401) {
@@ -45,7 +45,7 @@ export default function Dashboard() {
     }
 
     try {
-      const response = await api.post('/events', {
+      const response = await api.post('events', {
         name: eventName,
         candidate_ids: [],
         duration_sec: durationSec
@@ -91,7 +91,7 @@ export default function Dashboard() {
     }
 
     try {
-      const response = await api.post(`/events/${eventId}/archive`);
+      const response = await api.post(`events/${eventId}/archive`);
       setEvents(prev => prev.map(event =>
         event.id === eventId ? response.data : event
       ));
@@ -107,7 +107,7 @@ export default function Dashboard() {
     }
 
     try {
-      await api.delete(`/events/${eventId}`);
+      await api.delete(`events/${eventId}`);
       setEvents(prev => prev.filter(event => event.id !== eventId));
       success('Event o\'chirildi');
     } catch (err: any) {
@@ -121,7 +121,7 @@ export default function Dashboard() {
     }
 
     try {
-      const response = await api.post(`/events/${eventId}/duplicate`);
+      const response = await api.post(`events/${eventId}/duplicate`);
       setEvents(prev => [response.data, ...prev]);
       success('Tanlov nusxasi yaratildi!');
     } catch (err: any) {

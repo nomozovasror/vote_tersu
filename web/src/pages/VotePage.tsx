@@ -185,7 +185,7 @@ export default function VotePage() {
 
   const fetchEvent = async () => {
     try {
-      const response = await api.get(`/events/by-link/${link}`);
+      const response = await api.get(`events/by-link/${link}`);
       setEvent(response.data);
     } catch (error) {
       setError('Tanlov topilmadi');

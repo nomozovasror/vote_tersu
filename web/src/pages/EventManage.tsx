@@ -72,11 +72,11 @@ export default function EventManage() {
 
   const fetchEventDetails = async () => {
     try {
-      const response = await api.get(`/events/${id}`);
+      const response = await api.get(`events/${id}`);
       setEvent(response.data);
 
       // Fetch ordered event candidates
-      const candidatesResp = await api.get(`/event-management/${id}/candidates`);
+      const candidatesResp = await api.get(`event-management/${id}/candidates`);
       setEventCandidates(candidatesResp.data);
     } catch (error: any) {
       if (error.response?.status === 401) {
@@ -89,7 +89,7 @@ export default function EventManage() {
 
   const fetchCurrentCandidate = async () => {
     try {
-      const response = await api.get(`/event-management/${id}/current-candidate`);
+      const response = await api.get(`event-management/${id}/current-candidate`);
       setCurrentCandidate(response.data);
     } catch (error) {
       console.error('Failed to fetch current candidate');
@@ -192,7 +192,7 @@ export default function EventManage() {
     try {
       showLoading('Group yaratilmoqda...');
       const currentGroupName = groupName.trim(); // Save group name before clearing state
-      await api.post(`/event-management/${id}/set-group`, {
+      await api.post(`event-management/${id}/set-group`, {
         event_candidate_ids: selectedForGroup,
         group_name: currentGroupName
       });
@@ -231,7 +231,7 @@ export default function EventManage() {
 
     try {
       showLoading('Tanlov boshlanmoqda...');
-      await api.post(`/events/${id}/start`);
+      await api.post(`events/${id}/start`);
       fetchEventDetails();
       closeAlert();
       showSuccess('Event muvaffaqiyatli boshlandi!');
@@ -253,7 +253,7 @@ export default function EventManage() {
 
     try {
       showLoading('Tanlov to\'xtatilmoqda...');
-      await api.post(`/events/${id}/stop`);
+      await api.post(`events/${id}/stop`);
       fetchEventDetails();
       closeAlert();
       showSuccess('Event to\'xtatildi');
@@ -275,7 +275,7 @@ export default function EventManage() {
 
     try {
       showLoading('Tanlov qayta boshlanmoqda...');
-      await api.post(`/events/${id}/reset`);
+      await api.post(`events/${id}/reset`);
       await fetchEventDetails();
       await fetchCurrentCandidate();
       closeAlert();
@@ -364,7 +364,7 @@ export default function EventManage() {
 
     try {
       showLoading('O\'tilmoqda...');
-      await api.post(`/event-management/${id}/set-current-candidate/${candidateIndex}`);
+      await api.post(`event-management/${id}/set-current-candidate/${candidateIndex}`);
       await fetchEventDetails();
       await fetchCurrentCandidate();
       closeAlert();
@@ -414,7 +414,7 @@ export default function EventManage() {
   const startTimer = async () => {
     try {
       setStartingTimer(true);
-      await api.post(`/event-management/${id}/start-timer`);
+      await api.post(`event-management/${id}/start-timer`);
       fetchCurrentCandidate();
       showToast('Timer ishga tushdi!', 'success');
     } catch (error: any) {
@@ -438,7 +438,7 @@ export default function EventManage() {
     const reorderedIds = newOrder.map(ec => ec.candidate_id);
 
     try {
-      await api.post(`/event-management/${id}/reorder-candidates`, {
+      await api.post(`event-management/${id}/reorder-candidates`, {
         candidate_ids: reorderedIds
       });
       setEventCandidates(newOrder);
@@ -459,7 +459,7 @@ export default function EventManage() {
 
     try {
       showLoading('Keyingi kandidatga o\'tilmoqda...');
-      await api.post(`/event-management/${id}/next-candidate`);
+      await api.post(`event-management/${id}/next-candidate`);
       await fetchEventDetails();  // Refresh to get updated candidate statuses
       await fetchCurrentCandidate();
       closeAlert();
@@ -473,7 +473,7 @@ export default function EventManage() {
   const addCandidate = async (candidateId: number) => {
     try {
       showLoading('Kandidat qo\'shilmoqda...');
-      await api.post(`/event-management/${id}/add-candidate/${candidateId}`);
+      await api.post(`event-management/${id}/add-candidate/${candidateId}`);
       fetchEventDetails();
       closeAlert();
       showToast('Kandidat qo\'shildi!', 'success');

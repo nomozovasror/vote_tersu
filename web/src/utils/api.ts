@@ -2,14 +2,14 @@ import axios from 'axios';
 
 // Smart API URL detection for production
 function getApiBaseUrl(): string {
-  // 1. Use environment variable if set
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
-  }
-
-  // 2. In production, use the same host and port (proxied by Nginx)
+  // 1. In production, always use the same host and port (proxied by Nginx)
   if (import.meta.env.PROD) {
     return window.location.origin;
+  }
+
+  // 2. Use environment variable if set (mostly for development)
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
   }
 
   // 3. Default for development

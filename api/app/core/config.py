@@ -26,9 +26,6 @@ class Settings(BaseSettings):
     # CORS
     FRONTEND_URL: str = "http://localhost:5173"
 
-    # Backend URL for image paths
-    BACKEND_URL: str = "http://localhost:8000"
-
     # Server configuration
     SERVER_HOST: str = "localhost"
     API_PORT: int = 2014

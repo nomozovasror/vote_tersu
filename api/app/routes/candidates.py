@@ -267,10 +267,8 @@ async def upload_candidate_image(
         with open(file_path, "wb") as f:
             f.write(contents)
 
-        # Return full URL path
-        full_url = f"{settings.BACKEND_URL}/uploads/{unique_filename}"
         return {
-            "image_url": full_url,
+            "image_url": f"/uploads/{unique_filename}",
             "filename": unique_filename
         }
     except Exception as e:

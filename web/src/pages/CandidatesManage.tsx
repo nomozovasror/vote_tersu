@@ -17,7 +17,10 @@ export default function CandidatesManage() {
   const [syncing, setSyncing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
-  const [editingImageFor, setEditingImageFor] = useState<number | null>(null);
+  const [editImageModal, setEditImageModal] = useState<{ show: boolean; candidate: Candidate | null }>({ show: false, candidate: null });
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editImagePreview, setEditImagePreview] = useState<string>('');
+  const [editImageUploading, setEditImageUploading] = useState(false);
   const [toast, setToast] = useState<ToastState>({ show: false, message: '', type: 'info' });
   const navigate = useNavigate();
 
@@ -170,28 +173,64 @@ export default function CandidatesManage() {
     }
   };
 
-  const handleUpdateImage = async (candidateId: number) => {
-    if (!selectedFile) {
+  const openEditImageModal = (candidate: Candidate) => {
+    setEditImageModal({ show: true, candidate });
+    setEditImageFile(null);
+    setEditImagePreview('');
+  };
+
+  const closeEditImageModal = () => {
+    setEditImageModal({ show: false, candidate: null });
+    setEditImageFile(null);
+    setEditImagePreview('');
+  };
+
+  const handleEditImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      showToast('Faqat rasm fayllari qo\'shish mumkin!', 'warning');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Rasm hajmi 5MB dan oshmasligi kerak!', 'warning');
+      return;
+    }
+    setEditImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setEditImagePreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveImage = async () => {
+    if (!editImageFile || !editImageModal.candidate) {
       showToast('Iltimos, rasm tanlang!', 'warning');
       return;
     }
 
+    setEditImageUploading(true);
     try {
-      const uploadedUrl = await uploadImage();
-      if (!uploadedUrl) return;
+      const formDataImg = new FormData();
+      formDataImg.append('file', editImageFile);
 
-      await api.patch(`/candidates/${candidateId}`, { image: uploadedUrl });
-      showToast('Rasm yangilandi!', 'success');
-      setEditingImageFor(null);
-      setSelectedFile(null);
-      setImagePreview('');
+      const uploadRes = await api.post('/candidates/upload-image', formDataImg, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      const imageUrl = uploadRes.data.image_url;
+      await api.patch(`/candidates/${editImageModal.candidate.id}`, { image: imageUrl });
+
+      showToast('Rasm muvaffaqiyatli yangilandi!', 'success');
+      closeEditImageModal();
       fetchCandidates();
     } catch (error: any) {
       if (error.response?.status === 401) {
         navigate('/admin/login');
       } else {
-        showToast('Xatolik yuz berdi', 'error');
+        showToast('Rasmni saqlashda xatolik yuz berdi', 'error');
       }
+    } finally {
+      setEditImageUploading(false);
     }
   };
 
@@ -346,51 +385,23 @@ export default function CandidatesManage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end gap-2">
-                        {editingImageFor === candidate.id ? (
-                          <>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={handleFileChange}
-                              className="text-xs"
-                            />
-                            <button
-                              onClick={() => handleUpdateImage(candidate.id)}
-                              disabled={uploading}
-                              className="text-green-600 hover:text-green-900 disabled:text-gray-400"
-                            >
-                              {uploading ? 'Yuklanmoqda...' : 'Saqlash'}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingImageFor(null);
-                                setSelectedFile(null);
-                                setImagePreview('');
-                              }}
-                              className="text-gray-600 hover:text-gray-900"
-                            >
-                              Bekor
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => setEditingImageFor(candidate.id)}
-                              className="text-blue-600 hover:text-blue-900"
-                              title="Rasm qo'shish/o'zgartirish"
-                            >
-                              {candidate.image ? 'Rasmni o\'zgartirish' : 'Rasm qo\'shish'}
-                            </button>
-                            {!candidate.from_api && (
-                              <button
-                                onClick={() => handleDeleteCandidate(candidate.id, candidate.full_name)}
-                                className="text-red-600 hover:text-red-900"
-                                title="O'chirish"
-                              >
-                                O'chirish
-                              </button>
-                            )}
-                          </>
+                        {!candidate.from_api && (
+                          <button
+                            onClick={() => openEditImageModal(candidate)}
+                            className="text-blue-600 hover:text-blue-900"
+                            title="Rasm qo'shish/o'zgartirish"
+                          >
+                            {candidate.image ? 'Rasmni o\'zgartirish' : 'Rasm qo\'shish'}
+                          </button>
+                        )}
+                        {!candidate.from_api && (
+                          <button
+                            onClick={() => handleDeleteCandidate(candidate.id, candidate.full_name)}
+                            className="text-red-600 hover:text-red-900"
+                            title="O'chirish"
+                          >
+                            O'chirish
+                          </button>
                         )}
                       </div>
                     </td>
@@ -448,13 +459,22 @@ export default function CandidatesManage() {
                     {candidate.from_api ? 'API' : 'Manual'}
                   </span>
                   {!candidate.from_api && (
-                    <button
-                      onClick={() => handleDeleteCandidate(candidate.id, candidate.full_name)}
-                      className="text-red-600 hover:text-red-800 text-xs font-medium px-2 py-1 rounded hover:bg-red-50 transition-colors"
-                      title="O'chirish"
-                    >
-                      O'chirish
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => openEditImageModal(candidate)}
+                        className="text-blue-600 hover:text-blue-800 text-xs font-medium px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                        title="Rasm qo'shish/o'zgartirish"
+                      >
+                        {candidate.image ? 'Rasm' : 'Rasm qo\'sh'}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteCandidate(candidate.id, candidate.full_name)}
+                        className="text-red-600 hover:text-red-800 text-xs font-medium px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                        title="O'chirish"
+                      >
+                        O'chirish
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -467,6 +487,71 @@ export default function CandidatesManage() {
           </div>
         )}
       </div>
+
+      {/* Edit Image Modal */}
+      {editImageModal.show && editImageModal.candidate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-lg w-full max-w-sm">
+            <h2 className="text-xl font-bold mb-4">
+              {editImageModal.candidate.image ? 'Rasmni yangilash' : 'Rasm qo\'shish'}
+            </h2>
+            <p className="text-sm text-gray-600 mb-4 font-medium">{editImageModal.candidate.full_name}</p>
+
+            {/* Current image */}
+            {editImageModal.candidate.image && !editImagePreview && (
+              <div className="mb-4">
+                <p className="text-xs text-gray-500 mb-2">Joriy rasm:</p>
+                <img
+                  src={editImageModal.candidate.image}
+                  alt={editImageModal.candidate.full_name}
+                  className="w-32 h-32 object-cover rounded-lg border border-gray-200"
+                />
+              </div>
+            )}
+
+            {/* New image preview */}
+            {editImagePreview && (
+              <div className="mb-4">
+                <p className="text-xs text-gray-500 mb-2">Yangi rasm (ko'rinish):</p>
+                <img
+                  src={editImagePreview}
+                  alt="Yangi rasm"
+                  className="w-32 h-32 object-cover rounded-lg border-2 border-blue-400"
+                />
+              </div>
+            )}
+
+            {/* File input */}
+            <div className="mb-5">
+              <label className="block text-sm font-medium mb-2">Rasm tanlang</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleEditImageFileChange}
+                className="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-gray-300 rounded"
+              />
+              <p className="text-xs text-gray-400 mt-1">Maksimal hajm: 5MB. JPG, PNG, WebP qabul qilinadi.</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleSaveImage}
+                disabled={editImageUploading || !editImageFile}
+                className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium text-sm"
+              >
+                {editImageUploading ? 'Saqlanmoqda...' : 'Saqlash'}
+              </button>
+              <button
+                onClick={closeEditImageModal}
+                disabled={editImageUploading}
+                className="flex-1 bg-gray-200 text-gray-700 py-2 rounded hover:bg-gray-300 font-medium text-sm"
+              >
+                Bekor qilish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Manual Modal */}
       {showAddModal && (

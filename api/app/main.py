@@ -24,7 +24,6 @@ _web_port = settings.WEB_PORT
 
 _cors_origins = [
     settings.FRONTEND_URL,
-    settings.BACKEND_URL,
     # localhost for dev
     "http://localhost:5173",
     "http://localhost:3000",
